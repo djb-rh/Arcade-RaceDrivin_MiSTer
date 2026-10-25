@@ -777,3 +777,35 @@ by lock-step against MAME instruction traces (`mame/dsp32-measure.patch`
   = A4:A1), PIF is the 68010's interrupt level 4 (MAME `hddsk_update_pif`),
   and the RAM at 0x600000 is 128 KiB on the FPGA (`DSP32_RAM_LOG2 = 17`,
   the game never reads above 0x61FFFF) and 256 KiB in the sim to match MAME.
+
+### M2 leftovers (2026-10-25, later)
+
+- **MC68681** (`rtl/duart/mc68681.sv`) replaces the counter-only stand-in:
+  both channels with MAME's semantics (3-deep RX FIFO plus holding slot,
+  MR pointer, both baud tables, TxRDY one bit time after the start bit and
+  TxEMT at the last stop bit, a THR write while TxRDY is clear is dropped,
+  local loopback, break in loopback, parity/framing), ISR/IMR with the IRQ
+  on the 68010's level 6, counter/timer with the start/stop command reads,
+  input port with change detection (IP6 high as on MAME's board), output
+  port. Verified by `mame/duart_test.lua`, which exercises the chip through
+  the 68010's address space at frame spacing (loopback bytes, FIFO drain,
+  break, parity on B, counter and timer, output port, TX reset) and logs
+  every read; `tools/sim.py duart-test <log>` replays it against the RTL:
+  47 reads, all equal (counter values within three ticks). The game itself
+  only initialises the DUART (1.59 s: 8N1, 38400, RX interrupts enabled on
+  both channels) and never reads it in 20 s of attract, so link traffic is
+  the first real use (M5).
+- **8-bit ADC**: MAME's `adc0808` powers up with 0xff in its result register
+  and only updates it on a conversion (control bit 3 rising; EOC low for 64
+  of its 1 MHz clocks). The core returned the live input, which is where
+  the 68010 comparison first diverged (the program stores an ADC sample
+  before starting any conversion). `harddrivin_main_bus` now has the same
+  SAR/EOC model, and EOC drives IN0 bit 4.
+- **DSK zero-power RAM in the save file**: the .nvm file grows to 8 KiB
+  (MRA `<nvram index="2" size="8192"/>`, bytes 0x0000-0x0fff the main
+  board's 200E/210E lanes, 0x1000-0x1fff the DSK's 10C/30C); the bridge and
+  the board top carry 13-bit addresses and the DSK board has the same side
+  port as the main bus. `tb_core +nvramtest` writes and reads both halves
+  through the side port while the board is in reset: passes. Existing
+  4 KiB .nvm files are read as the first half (the DSK half then powers up
+  0xff, as a fresh chip would).

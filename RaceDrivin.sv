@@ -146,7 +146,7 @@ module emu (
   wire        nvram_save_req;
   wire        nvram_req_level;
   wire        nvram_we;
-  wire [11:0] nvram_addr;
+  wire [12:0] nvram_addr;
   wire [7:0]  nvram_wdata;
   wire        nvram_ack_core;
   wire [7:0]  nvram_rdata_core;
@@ -265,7 +265,7 @@ module emu (
     .hps_clk_i(CLK_50M),
     .ioctl_download_i(ioctl_download), .ioctl_upload_i(ioctl_upload),
     .ioctl_wr_i(ioctl_wr), .ioctl_rd_i(ioctl_rd), .ioctl_index_i(ioctl_index),
-    .ioctl_addr_i(ioctl_addr[11:0]), .ioctl_dout_i(ioctl_dout),
+    .ioctl_addr_i(ioctl_addr[12:0]), .ioctl_dout_i(ioctl_dout),
     .ioctl_wait_o(nvram_ioctl_wait), .ioctl_din_o(nvram_ioctl_din),
     .ioctl_upload_req_o(nvram_save_req),
     .core_clk_i(clk_core), .core_req_o(nvram_req_level),
@@ -543,6 +543,7 @@ module emu (
     .calibration_active_o(boot_calibration_active),
     .coin1_i(btn_coin), .coin2_i(1'b0),
     .service_i(service_mode), .diag_jumper_i(dip_misc_q[0]), .sw1_i(dip_sw1_q),
+    .duart_txa_o(), .duart_rxa_i(1'b1), .duart_txb_o(), .duart_rxb_i(1'b1),  // to the cabinet I/O board (M4)
     .compact_port1_i(compact_port1),
     .accelerator_i(gas_value),
     .clutch_i(clutch_value), .seat_i(seat), .shifter_x_i(shifter_x),

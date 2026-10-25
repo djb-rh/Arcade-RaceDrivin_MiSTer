@@ -1,7 +1,8 @@
 `default_nettype none
 
-// MiSTer byte-stream bridge for the Compact board's two 2 KiB battery-backed
-// RAM lanes.  The HPS side must keep running while the emulated board is held
+// MiSTer byte-stream bridge for the battery-backed RAMs: the main board's
+// two 2 KiB lanes (200E/210E, bytes 0x0000-0x0fff) and the DSK board's two
+// (10C/30C, bytes 0x1000-0x1fff), one 8 KiB .nvm file (MRA index 2).  The HPS side must keep running while the emulated board is held
 // in reset, so this bridge deliberately has no board-reset input.  A bundled
 // toggle handshake holds address/data stable across the 50 MHz -> 48 MHz CDC.
 module harddrivin_nvram_bridge #(
@@ -13,7 +14,7 @@ module harddrivin_nvram_bridge #(
   input  logic        ioctl_wr_i,
   input  tri0         ioctl_rd_i,
   input  logic [15:0] ioctl_index_i,
-  input  logic [11:0] ioctl_addr_i,
+  input  logic [12:0] ioctl_addr_i,
   input  logic [7:0]  ioctl_dout_i,
   output logic        ioctl_wait_o,
   output logic [7:0]  ioctl_din_o,
@@ -22,7 +23,7 @@ module harddrivin_nvram_bridge #(
   input  logic        core_clk_i,
   output logic        core_req_o,
   output logic        core_we_o,
-  output logic [11:0] core_addr_o,
+  output logic [12:0] core_addr_o,
   output logic [7:0]  core_wdata_o,
   input  logic        core_ack_i,
   input  logic [7:0]  core_rdata_i,
@@ -37,10 +38,10 @@ module harddrivin_nvram_bridge #(
   logic dirty_sync1_q = 1'b0, dirty_sync2_q = 1'b0, dirty_sync3_q = 1'b0;
   logic busy_q = 1'b0;
   logic we_q = 1'b0;
-  logic [11:0] addr_q = 12'd0;
+  logic [12:0] addr_q = 13'd0;
   logic [7:0] wdata_q = 8'd0;
   logic [7:0] rdata_q = 8'd0;
-  logic [11:0] fetched_addr_q = 12'hfff;
+  logic [12:0] fetched_addr_q = 13'h1fff;
   logic fetched_valid_q = 1'b0;
   logic [SAVE_TIMER_WIDTH-1:0] save_timer_q = '0;
 
@@ -108,7 +109,7 @@ module harddrivin_nvram_bridge #(
     // Clear the pending save only after HPS has actually consumed the final
     // byte and ended the upload. ioctl_rd accompanies the next address. An interrupted transfer remains retryable.
     if (nv_upload && ioctl_rd_i && fetched_valid_q &&
-        fetched_addr_q == 12'hfff && ioctl_addr_i == 12'h000)
+        fetched_addr_q == 13'h1fff && ioctl_addr_i == 13'h0000)
       upload_complete_q <= 1'b1;
     if (upload_prev_q && !nv_upload && upload_complete_q &&
         !dirty_during_upload_q) begin

@@ -39,6 +39,16 @@ module harddrivin_dsk_board #(
   output logic [15:0] rdata_o,
   output logic        ack_o,
 
+  // zero-power RAM side port for the MiSTer .nvm file (bytes; even = 10C
+  // high lane, odd = 30C low lane), same protocol as harddrivin_main_bus
+  input  logic        nvram_req_i,
+  input  logic        nvram_we_i,
+  input  logic [11:0] nvram_addr_i,
+  input  logic [7:0]  nvram_wdata_i,
+  output logic        nvram_ack_o,
+  output logic [7:0]  nvram_rdata_o,
+  output logic        nvram_dirty_o,
+
   output logic [7:0]  latch_o,
   output logic        dsp_reset_n_o, // DSPRESTN: 0 holds the DSP32C in reset
   output logic        dsp_halt_n_o,  // DSPZN: 0 halts the DSP32C
@@ -72,11 +82,25 @@ module harddrivin_dsk_board #(
     .we_lo_i(start && ram_sel && we_i && be_i[0]),
     .wdata_i(wdata_i), .rdata_o(ram_rdata)
   );
+  // The side port takes the RAM on clocks the 68010 does not use it (and
+  // while the board is held in reset, when MiSTer loads the .nvm file).
+  logic nvram_go, nvram_pend_q, nvram_done_q;
+  wire  cpu_zram = start && zram_sel;
+  assign nvram_go = nvram_req_i && !nvram_pend_q && !nvram_done_q && !cpu_zram;
+  always_ff @(posedge clk_i) begin
+    nvram_pend_q  <= nvram_go;
+    nvram_ack_o   <= nvram_pend_q;
+    if (nvram_pend_q) nvram_rdata_o <= nvram_addr_i[0] ? zram_rdata[7:0] : zram_rdata[15:8];
+    if (nvram_pend_q) nvram_done_q <= 1'b1;
+    else if (!nvram_req_i) nvram_done_q <= 1'b0;
+    nvram_dirty_o <= cpu_zram && we_i;
+  end
   harddrivin_lane_ram #(.ADDR_WIDTH(11), .INIT_ONES(1)) u_zram (
-    .clk_i(clk_i), .en_i(start && zram_sel), .addr_i(addr_i[11:1]),
-    .we_hi_i(start && zram_sel && we_i && be_i[1]),
-    .we_lo_i(start && zram_sel && we_i && be_i[0]),
-    .wdata_i(wdata_i), .rdata_o(zram_rdata)
+    .clk_i(clk_i), .en_i(cpu_zram || nvram_go),
+    .addr_i(cpu_zram ? addr_i[11:1] : nvram_addr_i[11:1]),
+    .we_hi_i((cpu_zram && we_i && be_i[1]) || (nvram_go && nvram_we_i && !nvram_addr_i[0])),
+    .we_lo_i((cpu_zram && we_i && be_i[0]) || (nvram_go && nvram_we_i && nvram_addr_i[0])),
+    .wdata_i(cpu_zram ? wdata_i : {nvram_wdata_i, nvram_wdata_i}), .rdata_o(zram_rdata)
   );
 
   logic        asic_rd_ack;

@@ -47,8 +47,8 @@ BUTTONS = ('  <buttons default="A,B,X,Y,L,R,Start,Select" '
 #   0x100000 ADSP sequential object ROMs (up to 0x50000)
 #   0x150000 sound sample ROMs (up to 0x50000; Hard Drivin' uses 4, Race Drivin' 5)
 #   0x1A0000 DSK track ROM (Race Drivin' only; 0x40000 reserved, stock sets use 0x20000)
-# Index 1 is the sound 68000 program ROM (BRAM), index 2 is the 4 KiB NVRAM
-# save file, index 3 (Race Drivin' only) is the 200E/210E power-up ZRAM image
+# Index 1 is the sound 68000 program ROM (BRAM), index 2 is the 8 KiB NVRAM
+# save file (main-board zero RAM, then the DSK board's), index 3 (Race Drivin' only) is the 200E/210E power-up ZRAM image
 # interleaved as the 68010 sees it (200E = high byte, 210E = low byte).
 LAYOUTS = {
     "harddriv-cockpit": {
@@ -60,7 +60,7 @@ LAYOUTS = {
                              ("mainpcb:harddriv_sound:serialroms", 0x150000, None)]),
             (1, None, [("mainpcb:harddriv_sound:soundcpu", 0, None)]),
         ],
-        "nvram": (2, 4096),
+        "nvram": (2, 8192),
         "remark": ("Uses stock MiSTer Main. Default gamepad controls: left-stick steering, right-stick up for "
                    "gas and down for brake, mapped Clutch, Gear Down/Up, Key and Coin. Pedals: Buttons disables "
                    "stick pedals and uses mapped Gas/Brake buttons. Gearbox: H-pattern uses maintained Gear 1-4 "
@@ -78,7 +78,7 @@ LAYOUTS = {
             (1, None, [("mainpcb:harddriv_sound:soundcpu", 0, None)]),
             (3, None, [("mainpcb:200e+mainpcb:210e", 0, None)]),
         ],
-        "nvram": (2, 4096),
+        "nvram": (2, 8192),
         "remark": "Work in progress. See PLAN.md in the project repository.",
     },
     "racedrivc-compact": {
@@ -92,7 +92,7 @@ LAYOUTS = {
             (1, None, [("mainpcb:harddriv_sound:soundcpu", 0, None)]),
             (3, None, [("mainpcb:200e+mainpcb:210e", 0, None)]),
         ],
-        "nvram": (2, 4096),
+        "nvram": (2, 8192),
         "remark": "Work in progress. See PLAN.md in the project repository.",
     },
 }

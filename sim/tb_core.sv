@@ -8,6 +8,7 @@
 //   +trace=<file>    68010 bus trace output                    default none
 //   +ms=<n>          emulated milliseconds to run              default 100
 //   +service=1       hold the self-test switch on
+//   +service_at=<ms> press it only from that time (MAME's Lua presses it on the first frame)
 //   +vcd=<file>      waveform dump (slow; needs --trace at build)
 //
 // ZRAM power-up images come in through the ZRAM_HI_FILE / ZRAM_LO_FILE macros
@@ -38,6 +39,9 @@ module tb_core;
   logic [14:0] snd_addr = 0;
   logic [15:0] snd_data = 0;
   logic        nvram_ack, nvram_dirty;
+  logic        nv_req = 0, nv_we = 0;
+  logic [12:0] nv_addr = 0;
+  logic [7:0]  nv_wdata = 0;
   logic [7:0]  nvram_rdata;
   logic        pot_prompt, brake_cal, shifter_cal, seat_cal, cal_active;
   logic signed [15:0] audio;
@@ -78,12 +82,13 @@ module tb_core;
     .analog_axes_i(32'h80808080), .axis_moved_i(4'd0),
     .snd_rom_wr_clk_i(clk50), .snd_rom_wr_en_i(snd_wr),
     .snd_rom_wr_addr_i(snd_addr), .snd_rom_wr_data_i(snd_data),
-    .nvram_req_i(1'b0), .nvram_we_i(1'b0), .nvram_addr_i(12'd0), .nvram_wdata_i(8'd0),
+    .nvram_req_i(nv_req), .nvram_we_i(nv_we), .nvram_addr_i(nv_addr), .nvram_wdata_i(nv_wdata),
     .nvram_ack_o(nvram_ack), .nvram_rdata_o(nvram_rdata), .nvram_dirty_o(nvram_dirty),
     .pot_prompt_active_o(pot_prompt), .brake_calibration_active_o(brake_cal),
     .shifter_calibration_active_o(shifter_cal), .seat_calibration_active_o(seat_cal),
     .calibration_active_o(cal_active),
     .coin1_i(coin1), .coin2_i(coin2), .service_i(service), .diag_jumper_i(diag_jumper),
+    .duart_txa_o(), .duart_rxa_i(1'b1), .duart_txb_o(), .duart_rxb_i(1'b1),
     .sw1_i(sw1), .compact_port1_i(compact_port1),
     .accelerator_i(accelerator), .clutch_i(clutch), .seat_i(seat),
     .shifter_x_i(shifter_x), .shifter_y_i(shifter_y), .brake_i(brake),
@@ -114,7 +119,12 @@ module tb_core;
     string snd_file = "index1.bin";
     int fd, n;
     void'($value$plusargs("snd=%s", snd_file));
-    if ($test$plusargs("service")) service = 1;
+    if ($test$plusargs("service")) begin
+      int at = 0;
+      void'($value$plusargs("service_at=%d", at));
+      if (at == 0) service = 1;
+      else fork begin #(at * 1_000_000_000); service = 1; $display("tb_core: self-test switch pressed at %0d ms", at); end join_none
+    end
     fd = $fopen(snd_file, "rb");
     if (fd == 0) begin $display("tb_core: cannot open %s", snd_file); $finish; end
     n = $fread(snd_bytes, fd);
@@ -131,6 +141,28 @@ module tb_core;
     repeat (100) @(posedge clk50);
     rst <= 0;
     $display("tb_core: reset released at %t", $time);
+  end
+
+  // ---- NVRAM side port self-check (+nvramtest): both zero RAMs through the
+  // MiSTer .nvm path while the board is still in reset, as MiSTer loads it.
+  task automatic nv_access(input bit we, input logic [12:0] addr, input logic [7:0] wd, output logic [7:0] rd);
+    @(posedge clk50); nv_req <= 1; nv_we <= we; nv_addr <= addr; nv_wdata <= wd;
+    @(posedge clk50); while (!nvram_ack) @(posedge clk50);
+    rd = nvram_rdata; nv_req <= 0; @(posedge clk50); @(posedge clk50);
+  endtask
+  initial begin
+    if ($test$plusargs("nvramtest")) begin
+      logic [7:0] rd; int errors = 0;
+      repeat (40) @(posedge clk50);
+      nv_access(0, 13'h1000, 0, rd); if (rd !== 8'hff) begin errors++; $display("nvramtest: DSK zero RAM should power up 0xff, read %02x", rd); end
+      nv_access(1, 13'h0123, 8'h5a, rd); nv_access(1, 13'h0124, 8'ha5, rd);
+      nv_access(1, 13'h1123, 8'h3c, rd); nv_access(1, 13'h1124, 8'hc3, rd);
+      nv_access(0, 13'h0123, 0, rd); if (rd !== 8'h5a) begin errors++; $display("nvramtest: main 0123 read %02x", rd); end
+      nv_access(0, 13'h0124, 0, rd); if (rd !== 8'ha5) begin errors++; $display("nvramtest: main 0124 read %02x", rd); end
+      nv_access(0, 13'h1123, 0, rd); if (rd !== 8'h3c) begin errors++; $display("nvramtest: dsk 1123 read %02x", rd); end
+      nv_access(0, 13'h1124, 0, rd); if (rd !== 8'hc3) begin errors++; $display("nvramtest: dsk 1124 read %02x", rd); end
+      $display("nvramtest: %s", errors == 0 ? "PASS" : "FAIL");
+    end
   end
 
   // ---- 68010 bus trace ---------------------------------------------------

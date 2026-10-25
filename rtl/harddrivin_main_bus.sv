@@ -66,6 +66,12 @@ module harddrivin_main_bus #(
   input  logic [11:0] brake12_i,
   input  logic [11:0] steering_i,       // requested absolute controller position
   output logic [11:0] steering_counter_o, // Compact byte-counter position seen by ROM
+  output logic        adc8_eoc_o,          // 0x60c000 bit 4: 8-bit ADC end of conversion
+  output logic        duart_irq_o,         // MC68681 IRQ (68010 level 6)
+  output logic        duart_txa_o,
+  input  logic        duart_rxa_i,
+  output logic        duart_txb_o,
+  input  logic        duart_rxb_i,
   output logic        watchdog_clear_o,
   output logic        irq_clear_o,
   output logic [7:0]  control_latch_o,
@@ -361,8 +367,10 @@ module harddrivin_main_bus #(
       3'd3: adc8_data = COCKPIT ? shifter_y_i : 8'hff;
       3'd4: adc8_data = COCKPIT ? shifter_x_i : 8'hff;
       3'd5: adc8_data = COCKPIT ? cockpit_wheel8 : 8'hff;
+      // Race Drivin' cockpit: channel 6 is the line-volts input (MAME 0x80),
+      // channel 7 is unused and reads 0xff; the Compact uses 6 for the brake.
       3'd6: adc8_data = COCKPIT ? 8'h80 : brake_i;
-      3'd7: adc8_data = COCKPIT ? 8'h80 : 8'hff;
+      3'd7: adc8_data = 8'hff;
       default: adc8_data = 8'hff;
     endcase
 
@@ -401,72 +409,57 @@ module harddrivin_main_bus #(
   assign snd_wr_o    = snd_cmd_write;
   assign snd_rd_o    = snd_data_read;
   assign snd_reset_o = snd_reset_pulse;
-  logic [7:0]  duart_acr_q;
-  logic [15:0] duart_preload_q;
-  logic [15:0] duart_count_q;
-  logic        duart_running_q;
-  logic        duart_ready_q;
-  logic [25:0] duart_phase_q;
-  logic        duart_tick;
+  // MC68681 DUART at 0xff0000-0xff001f, registers on the upper byte lane
+  // (MAME umask 0xff00): channel A is the cabinet link, channel B the side
+  // pods; the model is rtl/duart/mc68681.sv.  Its IRQ is the 68010's level 6.
   logic [7:0]  duart_rdata;
-  logic        duart_read;
-  logic        duart_write;
-  logic [3:0]  duart_reg;
-  assign duart_reg   = addr_i[4:1];
+  logic        duart_read, duart_write;
+  logic [7:0]  duart_op_unused;
   assign duart_read  = new_cycle && (busstate_i == BUS_READ) && duart_select;
   assign duart_write = new_cycle && (busstate_i == BUS_WRITE) && duart_select && !nuds_i;
-  // 230.4 kHz from 48 MHz: one tick every 208.33 clocks on average.
-  assign duart_tick = (duart_phase_q >= 26'd47769600);
-  always_comb begin
-    unique case (duart_reg)
-      4'd1, 4'd9: duart_rdata = 8'h0c;                 // SRA/SRB: TxRDY, TxEMT
-      4'd5:       duart_rdata = {4'b0000, duart_ready_q, 3'b000};   // ISR
-      4'd6:       duart_rdata = duart_count_q[15:8];   // CUR
-      4'd7:       duart_rdata = duart_count_q[7:0];    // CLR
-      default:    duart_rdata = 8'h00;
-    endcase
-  end
+  mc68681 u_duart (
+    .clk_i(clk_i), .rst_i(rst_i),
+    .req_i(duart_read || duart_write), .we_i(duart_write), .addr_i(addr_i[4:1]),
+    .wdata_i(wdata_i[15:8]), .rdata_o(duart_rdata), .irq_o(duart_irq_o),
+    .tx_a_o(duart_txa_o), .rx_a_i(duart_rxa_i), .tx_b_o(duart_txb_o), .rx_b_i(duart_rxb_i),
+    .ip_i(7'h40), .op_o(duart_op_unused)     // IP6 high, IP0-5 low: what MAME's board reads
+  );
+  logic unused_duart_op;
+  assign unused_duart_op = ^duart_op_unused;
+
+  // ADC0809 for the 8-bit inputs, as MAME's adc0808 behaves: a conversion
+  // starts on the rising edge of control bit 3, samples the selected channel
+  // two 1 MHz clocks later with EOC low, and completes 64 clocks after that
+  // (EOC high); the result register powers up as 0xff and holds its value
+  // between conversions, so an early read returns 0xff, not the live input.
+  logic [7:0] adc8_sar_q;
+  logic       adc8_eoc_q, adc8_start_q;
+  logic [1:0] adc8_state_q;              // 0 idle, 1 start, 2 ready, 3 running
+  logic [6:0] adc8_timer_q;
+  logic [5:0] adc8_div_q;
+  wire        adc8_tick = adc8_div_q == 6'd47;  // 1 MHz from 48 MHz
+  wire        adc_control_write = new_cycle && (busstate_i == BUS_WRITE) && compact_adc12_select;
   always_ff @(posedge clk_i) begin
     if (rst_i) begin
-      duart_acr_q     <= 8'h00;
-      duart_preload_q <= 16'hffff;
-      duart_count_q   <= 16'hffff;
-      duart_running_q <= 1'b0;
-      duart_ready_q   <= 1'b0;
-      duart_phase_q   <= 26'd0;
+      adc8_sar_q <= 8'hff; adc8_eoc_q <= 1'b1; adc8_start_q <= 1'b0;
+      adc8_state_q <= 2'd0; adc8_timer_q <= 7'd0; adc8_div_q <= 6'd0;
     end else begin
-      duart_phase_q <= duart_tick ? (duart_phase_q + 26'd230400 - 26'd48000000)
-                                  : (duart_phase_q + 26'd230400);
-      if (duart_running_q && duart_tick) begin
-        duart_count_q <= duart_count_q - 16'd1;
-        if (duart_count_q == 16'd0) duart_ready_q <= 1'b1;
-      end
-      if (duart_write) begin
-        unique case (duart_reg)
-          4'd4: duart_acr_q           <= wdata_i[15:8];
-          4'd6: duart_preload_q[15:8] <= wdata_i[15:8];
-          4'd7: duart_preload_q[7:0]  <= wdata_i[15:8];
-          default: ;
+      adc8_div_q <= adc8_tick ? 6'd0 : adc8_div_q + 6'd1;
+      if (adc8_tick && adc8_state_q != 2'd0) begin
+        if (adc8_timer_q != 7'd0) adc8_timer_q <= adc8_timer_q - 7'd1;
+        else case (adc8_state_q)
+          2'd1: adc8_state_q <= 2'd2;
+          2'd2: begin adc8_state_q <= 2'd3; adc8_sar_q <= adc8_data; adc8_eoc_q <= 1'b0; adc8_timer_q <= 7'd63; end
+          default: begin adc8_state_q <= 2'd0; adc8_sar_q <= adc8_data; adc8_eoc_q <= 1'b1; end
         endcase
       end
-      if (duart_read) begin
-        unique case (duart_reg)
-          4'd14: begin                     // start counter command
-            duart_count_q   <= duart_preload_q;
-            duart_running_q <= 1'b1;
-            duart_ready_q   <= 1'b0;
-          end
-          4'd15: begin                     // stop counter command
-            duart_running_q <= 1'b0;
-            duart_ready_q   <= 1'b0;
-          end
-          default: ;
-        endcase
+      if (adc_control_write) begin
+        if (adc_control_next[3] && !adc8_start_q) begin adc8_state_q <= 2'd1; adc8_timer_q <= 7'd0; end
+        adc8_start_q <= adc_control_next[3];
       end
     end
   end
-  logic unused_duart_acr;
-  assign unused_duart_acr = ^duart_acr_q;
+  assign adc8_eoc_o = adc8_eoc_q;
 
   assign snd_reset_pulse = new_cycle &&
                            ((busstate_i == BUS_WRITE && snd_reset_select) ||
@@ -752,7 +745,7 @@ module harddrivin_main_bus #(
             read_count_o <= read_count_o + 32'd1;
             done_cycle_q <= cycle_i;
           end else if (compact_adc8_select) begin
-            rdata_o      <= {8'hff, adc8_data};
+            rdata_o      <= {8'hff, adc8_sar_q};        // last conversion result
             read_count_o <= read_count_o + 32'd1;
             done_cycle_q <= cycle_i;
           end else if (compact_adc12_select) begin

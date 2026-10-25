@@ -424,9 +424,11 @@ MAME log, and the boot sequence reaches the DSP32C upload.
   DSP32C upload. The ASIC65 model reproduces all 151 results in a 20 s MAME
   log (`tools/sim.py asic65-test`). Later the same day the HDL 137412
   slapstic went in and the comparison reached the DSP32C PIO test (930,594
-  writes, MAME 1.5846 s), M2's end point. Still to do for M2: IRQ 4
-  plumbing, the full 68681, DSK zero-power RAM save, self-test checksums
-  (NOTES.md section 9).
+  writes, MAME 1.5846 s), M2's end point. IRQ 4 came with the DSP32C (M3);
+  the full MC68681 (`rtl/duart/`, verified register for register against
+  MAME with `mame/duart_test.lua` and `tools/sim.py duart-test`), the DSK
+  zero-power RAM in an 8 KiB .nvm file, and MAME's ADC0808 conversion model
+  followed (NOTES.md section 9, "M2 leftovers").
 
 **M3 — DSP32C core.**
 Standalone core in Verilator, lock-step against MAME instruction traces of the

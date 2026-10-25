@@ -73,3 +73,8 @@ memory writes and host PIO events for the lock-step test of the FPGA core,
 inputs (coin, Key, first gear, full throttle, steering weave from 17 s) so
 the DSP32C runs its real-time physics; `RD_PLAY_T0` moves the timeline and
 `RD_PLAY_ORACLE=1` loads oracle.lua as well.
+
+`mame/duart_test.lua` exercises the MC68681 through the 68010's address space
+(loopback, FIFO, break, parity, counter/timer, output port) and logs every
+read to `RD_DUART_LOG`; `tools/sim.py duart-test <log>` replays it against
+the RTL model.

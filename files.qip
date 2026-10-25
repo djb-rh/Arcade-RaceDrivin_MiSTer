@@ -113,6 +113,7 @@ foreach f {
   rtl/harddrivin_gsp_memory.sv
   rtl/harddrivin_compact_scanout.sv
   rtl/harddrivin_msp_memory.sv
+  rtl/duart/mc68681.sv
   rtl/dsp32c/dsp32c_pkg.sv
   rtl/dsp32c/dsp32c_fma.sv
   rtl/dsp32c/dsp32c_ram.sv

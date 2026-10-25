@@ -151,6 +151,8 @@ def cmd_run(args):
         plus.append(f"+trace={Path(args.trace).resolve()}")
     if args.service:
         plus.append("+service=1")
+        if args.service_at:
+            plus.append(f"+service_at={args.service_at}")
     if args.vcd:
         plus.append(f"+vcd={Path(args.vcd).resolve()}")
     cmd = [str(exe)] + plus
@@ -220,6 +222,21 @@ def cmd_dsp32_test(args):
     sys.exit(subprocess.run([str(out / "obj" / "Vtb_dsp32")] + plus, cwd=out).returncode)
 
 
+def cmd_duart_test(args):
+    """Replay a mame/duart_test.lua log against the MC68681 model."""
+    out = BUILD / "duart"
+    out.mkdir(parents=True, exist_ok=True)
+    cmd = ["verilator", "--binary", "--timing", "-Wno-fatal", "-Wno-WIDTH", "--Mdir", str(out / "obj"),
+           "--top-module", "tb_duart", str(ROOT / "rtl" / "duart" / "mc68681.sv"), str(ROOT / "sim" / "tb_duart.sv")]
+    r = subprocess.run(cmd, cwd=ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                       env=dict(os.environ, PATH=SIM_PATH))
+    (out / "build.log").write_text(r.stdout)
+    if r.returncode != 0:
+        print(r.stdout[-4000:])
+        sys.exit("verilator failed (sim/build/duart/build.log)")
+    sys.exit(subprocess.run([str(out / "obj" / "Vtb_duart"), f"+log={Path(args.log).resolve()}"], cwd=out).returncode)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -237,6 +254,7 @@ def main():
     r.add_argument("--trace")
     r.add_argument("--vcd")
     r.add_argument("--service", action="store_true")
+    r.add_argument("--service-at", type=int, default=0, metavar="MS", help="press the self-test switch at this time instead of from reset")
     r.add_argument("--opt", action="store_true", help="run the -O3 build")
     r.set_defaults(func=cmd_run)
     m = sub.add_parser("roms")
@@ -256,6 +274,9 @@ def main():
     d.add_argument("--mem", help="memory image (default <trace>.mem)")
     d.add_argument("--max-mismatch", type=int, default=20)
     d.set_defaults(func=cmd_dsp32_test)
+    u = sub.add_parser("duart-test", help="replay a mame/duart_test.lua log against the MC68681 model")
+    u.add_argument("log")
+    u.set_defaults(func=cmd_duart_test)
     args = ap.parse_args()
     args.func(args)
 

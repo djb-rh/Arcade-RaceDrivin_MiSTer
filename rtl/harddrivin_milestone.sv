@@ -163,7 +163,7 @@ module harddrivin_milestone #(
   // NVRAM (.nvm) side port into the 68010 zero RAM, clk_gsp domain.
   input  logic        nvram_req_i,
   input  logic        nvram_we_i,
-  input  logic [11:0] nvram_addr_i,
+  input  logic [12:0] nvram_addr_i,   // bit 12: 0 main-board zero RAM, 1 DSK zero RAM
   input  logic [7:0]  nvram_wdata_i,
   output logic        nvram_ack_o,
   output logic [7:0]  nvram_rdata_o,
@@ -177,6 +177,11 @@ module harddrivin_milestone #(
   input  logic        coin1_i,
   input  logic        coin2_i,
   input  logic        service_i,
+  // MC68681 serial channels: A the cabinet link, B the side pods
+  output logic        duart_txa_o,
+  input  logic        duart_rxa_i,
+  output logic        duart_txb_o,
+  input  logic        duart_rxb_i,
   input  logic        diag_jumper_i,   // port 0 bit 0 (DIAGN), 1 = off
   input  logic [7:0]  sw1_i,           // port 0 high byte: SW1 DIP switches, 1 = off
   input  logic [15:0] compact_port1_i,
@@ -454,6 +459,7 @@ module harddrivin_milestone #(
   logic gsp_illegal, msp_illegal;
 
   logic [7:0] main_switch1;
+  logic       main_adc8_eoc, main_duart_irq;
   logic [7:0] main_control_latch;
   logic main_watchdog_clear, main_irq_clear;
   logic gsp_reset_release, msp_reset_release;
@@ -545,7 +551,7 @@ module harddrivin_milestone #(
   // SP-327 sheet 8 low switch byte. Both ADCs complete immediately in this
   // functional model; the two blanking inputs retain their board polarity.
   assign main_switch1 = {
-    !coin1_i, !coin2_i, !service_i, 2'b11,
+    !coin1_i, !coin2_i, !service_i, main_adc8_eoc, 1'b1,
     !vblank_o, !hblank_o, diag_jumper_i
   };
   // /GSPRES from the control latch is the GSP's RESET pin.  The chip is
@@ -2001,7 +2007,8 @@ module harddrivin_milestone #(
   // IRQ=5, GSP HINT=3, MSP HINT=1. IPL pins and the TG68 port are active-low
   // encoded, and these board interrupts are autovectored.
   always_comb begin
-    if (main_periodic_irq_q) main_ipl_n = 3'b010;
+    if (main_duart_irq)      main_ipl_n = 3'b001;   // MC68681 (MAME level 6)
+    else if (main_periodic_irq_q) main_ipl_n = 3'b010;
     else if (dsk_irq4)       main_ipl_n = 3'b011;   // DSK board: DSP32C PIF (MAME level 4)
     else if (!gsp_hint_n)    main_ipl_n = 3'b100;
     else if (adsp_irq)       main_ipl_n = 3'b101;
@@ -2062,9 +2069,9 @@ module harddrivin_milestone #(
     .rom_addr_o(main_rom_addr), .rom_req_o(main_rom_req),
     .rom_ack_i(main_rom_ack), .rom_data_i(main_rom_data),
     .switch1_i(main_switch1), .sw1_i(sw1_i),
-    .nvram_req_i(nvram_req_i), .nvram_we_i(nvram_we_i), .nvram_addr_i(nvram_addr_i),
-    .nvram_wdata_i(nvram_wdata_i), .nvram_ack_o(nvram_ack_o),
-    .nvram_rdata_o(nvram_rdata_o), .nvram_dirty_o(nvram_dirty_o),
+    .nvram_req_i(nvram_req_i && !nvram_addr_i[12]), .nvram_we_i(nvram_we_i), .nvram_addr_i(nvram_addr_i[11:0]),
+    .nvram_wdata_i(nvram_wdata_i), .nvram_ack_o(nvram_main_ack),
+    .nvram_rdata_o(nvram_main_rdata), .nvram_dirty_o(nvram_main_dirty),
     .snd_wr_o(snd_wr), .snd_rd_o(snd_rd), .snd_reset_o(snd_reset),
     .snd_rdata_i(snd_rdata), .snd_mainflag_i(snd_mainflag),
     .snd_soundflag_i(snd_soundflag),
@@ -2074,6 +2081,9 @@ module harddrivin_milestone #(
     .shifter_y_i(shifter_y_i),
     .brake_i(brake_i), .brake12_i(brake12_i), .steering_i(steering_i),
     .steering_counter_o(steering_counter),
+    .adc8_eoc_o(main_adc8_eoc), .duart_irq_o(main_duart_irq),
+    .duart_txa_o(duart_txa_o), .duart_rxa_i(duart_rxa_i),
+    .duart_txb_o(duart_txb_o), .duart_rxb_i(duart_rxb_i),
     .watchdog_clear_o(main_watchdog_clear),
     .irq_clear_o(main_irq_clear),
     .control_latch_o(main_control_latch),
@@ -2103,8 +2113,15 @@ module harddrivin_milestone #(
     .diagnostic_o(main_diagnostic)
   );
 
-  // Race Drivin' DSK board (RAM, zero-power RAM, ASIC65, control latch);
-  // the DSP32C itself arrives with M3.
+  // NVRAM side port: byte addresses 0x0000-0x0fff are the main board's zero
+  // RAM (200E/210E), 0x1000-0x1fff the DSK board's (10C/30C).
+  logic       nvram_main_ack, nvram_main_dirty, nvram_dsk_ack, nvram_dsk_dirty;
+  logic [7:0] nvram_main_rdata, nvram_dsk_rdata;
+  assign nvram_ack_o   = nvram_main_ack | nvram_dsk_ack;
+  assign nvram_rdata_o = nvram_addr_i[12] ? nvram_dsk_rdata : nvram_main_rdata;
+  assign nvram_dirty_o = nvram_main_dirty | nvram_dsk_dirty;
+
+  // Race Drivin' DSK board (RAM, zero-power RAM, ASIC65, control latch, DSP32C).
   logic        dsk_host_req, dsk_host_we, dsk_host_ack;
   logic [23:1] dsk_host_addr;
   logic [1:0]  dsk_host_be;
@@ -2117,6 +2134,9 @@ module harddrivin_milestone #(
     .req_i(dsk_host_req), .we_i(dsk_host_we), .addr_i(dsk_host_addr),
     .be_i(dsk_host_be), .wdata_i(dsk_host_wdata),
     .rdata_o(dsk_host_rdata), .ack_o(dsk_host_ack),
+    .nvram_req_i(nvram_req_i && nvram_addr_i[12]), .nvram_we_i(nvram_we_i),
+    .nvram_addr_i(nvram_addr_i[11:0]), .nvram_wdata_i(nvram_wdata_i),
+    .nvram_ack_o(nvram_dsk_ack), .nvram_rdata_o(nvram_dsk_rdata), .nvram_dirty_o(nvram_dsk_dirty),
     .latch_o(dsk_latch), .dsp_reset_n_o(dsk_dsp_reset_n),
     .dsp_halt_n_o(dsk_dsp_halt_n), .irq4_o(dsk_irq4), .led_o(dsk_led),
     .dsp_pc_o(dsk_dsp_pc), .dsp_running_o(dsk_dsp_running)
