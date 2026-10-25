@@ -760,9 +760,13 @@ by lock-step against MAME instruction traces (`mame/dsp32-measure.patch`
   DAU instruction.
 - **Speed.** 10-16 clocks per instruction at 48 MHz, so 3-5 MIPS against
   the original's 10. The whole-core comparison still holds: with the DSP32C
-  in the DSK board the 68010 write sequence matches MAME for the entire
-  1.75 s run (1,058,106 writes, MAME 1.935 s), through the PIO test and the
-  program upload; a longer run is needed to find the next divergence.
+  in the DSK board the 68010 write sequence matches MAME through the PIO
+  test and the program upload, and the next divergence is not the DSP at
+  all: at write 1,068,142 (sim 1.770 s, MAME 1.968 s) the program stores
+  its first analogue input sample into DSK RAM (0x900006: MAME 0xFF from
+  its default port values, the sim 0x80 from tb_core's default pot
+  values). From here the comparison depends on the cabinet inputs, which
+  is M4's territory; the DSK board and DSP32C are no longer the limit.
 - **In the DSK board.** DSPRESTN and DSPZN from the latch drive the core's
   reset and halt inputs, the PIO window 0x85C000 is the host port (register
   = A4:A1), PIF is the 68010's interrupt level 4 (MAME `hddsk_update_pif`),
