@@ -508,3 +508,63 @@ Measured from the disassembly text in `~/Developer/rdp-fullscreen`
 - Local ROM sets: cockpit `racedriv` rev 5 (136077-5001..5006 plus the
   Y2K 200r variant) and a slapstic-free cockpit set; compact rev 5 referenced
   by the tools.
+
+## 7. DSP32C dynamic measurement in MAME (2026-10-24)
+
+Method: `mame/dsp32-measure.patch` on MAME 0.289, `hd` subtarget, 240
+emulated seconds of attract mode (demo driving) per set, headless. Cockpit
+`racedriv` rev 5 with the user's calibrated NVRAM; compact `racedrivc` from
+the Stock Car folder (patched R/S pairs and track; same DSP32C program).
+Full reports in `docs/measurements/`. Both sets give the same profile.
+
+### Throughput
+- The DSP32C never halts after boot: 2.36 G instructions in 238 s, average
+  9.9 M instr/s, peak 10.0 M (MAME charges 4 clocks per instruction at 40 MHz).
+- **Almost all of it is an idle loop.** 29.4% `nop`, and the top handlers
+  are the polling loop: `adde_si` 415 M, `load_er` 276 M, `load24` 140 M,
+  `store_er` 138 M, `load_r` 138 M, `adde_ss` 138 M, `cmpe_di` 138 M,
+  `goto_eq` 138 M, `goto_lt` 138 M. It spins reading the mailbox page at
+  0x613C00 (138 M reads) and the 2 KiB RAM at 0xFFF800 (277 M reads, 139 M
+  writes).
+- **Real work is small: about 3.9 M DAU operations in 238 s, roughly
+  16,000 per second.** `d3_aMpp` 1.16 M, `d1_0px` 0.79 M, `d1_1pp` 0.25 M,
+  `d1_1pm` 0.22 M, `d1_0mx` 0.17 M, `d3_aMpm` 0.12 M, `d2_aMpp` 0.10 M,
+  `d5_float` 0.28 M, `d5_ifalt` 0.15 M, `d5_float24` 0.12 M, `d5_int24`
+  0.09 M, `d5_int` 0.09 M, `d5_seed` 0.04 M, `d5_round` 0.04 M.
+- 63 distinct MAME handlers executed in total (full list in the reports).
+  No `do` loops, no `d4` forms, no `*r` store variants of DAU forms 1-3, no
+  `ic/oc/ieee/dsp`, no interrupt or serial branch conditions.
+- **Consequence for the FPGA core:** correctness of the CAU/DAU subset
+  matters far more than raw speed. A core that executes an instruction every
+  4-5 clocks at 48 MHz matches the original; even a several-times slower
+  core would keep up with the physics work, it would merely poll less often.
+  Mailbox response latency (command posted by the 68010 to result available)
+  is the real constraint and can be measured from the PIO timestamps.
+
+### Memory footprint
+- 8 KiB RAM at 0: fully used. 2 KiB RAM at 0xFFF800: fully used (stack and
+  loop variables).
+- 256 KiB RAM at 0x600000: **every page is written once (boot-time clear)
+  but reads occur only in 0x600000-0x6003FF, 0x611400-0x612BFF,
+  0x613C00-0x61ABFF and 0x61F400-0x61FFFF.** Nothing above 0x61FFFF is ever
+  read. So a 128 KiB RAM (0x600000-0x61FFFF) with writes above it ignored is
+  functionally sufficient for rev 5, and it fits in the block RAM the MSP
+  vacates. (Instruction fetches are not counted here; the program lives in
+  the same region, uploaded over the PIO.)
+- Hot pages: 0x613C00 (mailbox: 138 M reads, 0.85 M writes), 0x612800,
+  0x611C00, 0x611400, 0x619800, 0x611800.
+- Stray accesses to 0x005400, 0x009800, 0x009C00 (unmapped in MAME, read as
+  0): probably a boot-time memory probe; the FPGA should return 0 there too.
+
+### PIO usage (raw 68010 word offsets into the 0x85C000 window)
+- Writes: reg 2 (980 k, the data register used for program and segment-table
+  upload and mailbox writes), reg 0 (400 k), reg 11 (398 k), reg 7 (7, the
+  PCR: first write 0x1A1A, later 0x1F1F), reg 10 (5).
+- Reads: reg 7 (792 k, PCR/flag polling), reg 0, 8, 11 (197 k each), reg 2
+  (28 k).
+- PCR reset bit toggles 4 times at boot (two short pulses), then stays set.
+  The 68010 touches the DSK at t = 1.6 s (cockpit) / 1.3 s (compact) after
+  reset, matching the boot-order notes.
+- So the PIO model needs: PAR/PARE address registers with DMA autoincrement,
+  PDR data register, PCR, PIR and EMR, in the register mode the game selects
+  via PCR bits 1 and 9. No serial I/O.

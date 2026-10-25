@@ -1,0 +1,108 @@
+== /private/tmp/claude-503/-Users-djb-Developer-rd-mister/07f18db4-35af-4a92-bf80-2e78ab3cc65a/scratchpad/dsp32_racedriv.log
+instructions: 2358454144  reads: 418100719  writes: 140583043  pio_reads: 1412346  pio_writes: 1778744
+average rate: 9.892 M instr/s over 238.4 s emulated (real DSP32C at 40 MHz = 10.0 M instr/s)
+peak rate over a 100k-instruction window: 10.000 M instr/s
+first mark at t=1.600s, last at t=240.003s
+ram0 (0x000000-0x001FFF): pages 000000..001fff, 8 KiB touched, span 8 KiB, reads 1285125, writes 465691
+ram6 (0x600000-0x63FFFF): pages 600000..63ffff, 256 KiB touched, span 256 KiB, reads 139312021, writes 1064883
+ramF (0xFFF800-0xFFFFFF): pages fff800..ffffff, 2 KiB touched, span 2 KiB, reads 277503563, writes 139052469
+accesses outside known RAM: 005400, 009800, 009c00
+PIO traffic by register index (raw 68010 word offset):
+  PIOR reg  0: 197219
+  PIOR reg  2: 28317
+  PIOR reg  7: 792394
+  PIOR reg  8: 197207
+  PIOR reg 11: 197209
+  PIOW reg  0: 399627
+  PIOW reg  2: 980659
+  PIOW reg  7: 7
+  PIOW reg 10: 5
+  PIOW reg 11: 398446
+PCR reset transitions: 4
+  PCR t=1.600169 reset=0 pc=00004C instr=19
+  PCR t=1.600339 reset=1 pc=00004C instr=19
+  PCR t=1.601014 reset=0 pc=000010 instr=6629
+  PCR t=4.163768 reset=1 pc=000010 instr=6629
+instruction families executed (dynamic counts):
+     692587967  29.4%  nop
+     552974943  23.4%  CAU load/store pointer
+     415711724  17.6%  CAU add short immediate
+     276814343  11.7%  goto/call (conditional or 24-bit)
+     139539185   5.9%  other: load24
+     138775222   5.9%  CAU 16-bit ALU reg,reg
+     138329428   5.9%  CAU 16-bit ALU reg,imm
+       1541206   0.1%  DAU form 1 (aN = Y + aM*X)
+       1274699   0.1%  DAU form 3
+        283616   0.0%  DAU form 5: float
+        148932   0.0%  DAU form 5: ifalt
+        116446   0.0%  DAU form 5: float24
+        103520   0.0%  DAU form 2
+         91103   0.0%  DAU form 5: int24
+         85788   0.0%  DAU form 5: int
+         39787   0.0%  DAU form 5: seed
+         36235   0.0%  DAU form 5: round
+distinct MAME handlers executed: 63
+     692587967  nop
+     415463092  adde_si
+     276343314  load_er
+     139539185  load24
+     138235143  store_er
+     137971011  load_r
+     137902084  adde_ss
+     137660220  cmpe_di
+     137650955  goto_eq
+     137625363  goto_lt
+       1156671  d3_aMpp
+        792128  d1_0px
+        651499  sube_di
+        510626  goto24
+        424648  goto_ne
+        364480  store_r
+        340915  mul2e_s
+        283616  d5_float
+        253113  d1_1pp
+        248632  add_si
+        219150  d1_1pm
+        208749  sube_ss
+        190571  div2e_s
+        186696  call24
+        186693  goto_t
+        174547  d1_0mx
+        148932  d5_ifalt
+        118028  d3_aMpm
+        116446  d5_float24
+        103520  d2_aMpp
+         91103  d5_int24
+         85788  d5_int
+         69585  goto_ale
+         66714  goto_age
+         52405  ande_ss
+         39787  d5_seed
+         39417  store_lr
+         36235  d5_round
+         33857  d1_aMmp
+         33264  d1_aMpp
+         21578  load_lr
+         19688  goto_aeq
+         19490  cmpe_ss
+         19312  goto_alt
+         19056  ore_ss
+         18515  d1_1mp
+         17444  goto_ge
+         16632  d1_aMpm
+         13265  goto_agt
+         12192  nege_s
+         11900  and_di
+         11860  div2_s
+         10912  goto_le
+         10702  goto_cc
+          7138  sub_ss
+          4772  neg_s
+          4772  shr_s
+          4772  sub_di
+          1192  goto_gt
+          1037  subre_di
+           609  add_ss
+           609  subr_ss
+           548  goto_ane
+distinct 11-bit dispatch indexes: 115, distinct 16-bit prefixes: 249

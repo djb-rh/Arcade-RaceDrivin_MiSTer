@@ -1,0 +1,54 @@
+Race Drivin' for MiSTer
+
+Project integration is distributed under GPL-3.0-or-later; see LICENSE.
+Third-party code retains its original notices and licenses.
+
+This project started from the Hard Drivin' MiSTer core and keeps its structure:
+
+  Hard Drivin' for MiSTer (core development: Fulviuus)
+  Upstream: https://github.com/retrogarage/harddrivin-mister
+  Base revision: ae9fe0d2 ("Initial Hard Drivin' cockpit release", 2026-10-24)
+  License: GPL-3.0-or-later
+  Imported 2026-10-24 into rtl/, sys/, sim/hd_tests/, tools/hd/ and the
+  top-level project files (RaceDrivin.qsf/.qpf/.sdc/.sv, files.qip,
+  sys_mister.tcl), renamed from HardDrivin.* with no functional change.
+  The upstream NOTICE is preserved as NOTICE.harddrivin.
+
+Components vendored by that core and carried here unchanged:
+
+sys
+  Upstream: https://github.com/MiSTer-devel/Template_MiSTer
+  Base revision: 3ea1134cf05d62c2b1db30362277a823d739ced2
+  License: GPL-2.0 / GPL-2.0-or-later per file
+
+rtl/tms34010
+  Upstream: https://github.com/birdybro/TMS34010_sv
+  Base revision: 94a258e80a07ceb4303ce0b99818df832e96007f
+  License: MIT
+
+rtl/tg68k
+  Upstream: https://github.com/TobiFlex/TG68K.C
+  Base revision: ade33e396a1e647c2de9daf71ff9d5b3979639b2
+  License: LGPL-3.0-or-later
+
+rtl/ika32010
+  Upstream: https://github.com/ika-musume/IKA32010
+  Base revision: 51bc1f05a2a08a61c8815a9643d08a42e99779c6
+  License: BSD-2-Clause
+
+rtl/fx68k
+  Upstream: https://github.com/MiSTer-devel/AtariST_MiSTer
+  Base revision: 426ef8765fc16cb547e7ff5deb7d9be61003b36d
+  License: GPL-3.0
+
+rtl/sdram.sv
+  Upstream: https://github.com/MiSTer-devel/AliceMC10_MiSTer
+  Base revision: b94754d7e49011c4216980b16ca0f3fc3b628e6c
+  License: GPL-2.0-or-later (see rtl/SDRAM-LICENSE)
+
+MAME (https://github.com/mamedev/mame) is used as a behavioral reference and
+as the test oracle; mame/dsp32-measure.patch is a patch against MAME 0.289
+and is licensed under MAME's terms for that file (BSD-3-Clause).
+
+Game software and trademarks belong to their respective owners. No game ROM
+data is included in this repository.

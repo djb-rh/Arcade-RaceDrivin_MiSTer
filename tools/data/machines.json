@@ -1,0 +1,1156 @@
+{
+ "harddriv": {
+  "cloneof": null,
+  "cpus": [
+   {
+    "clock": 8000000,
+    "name": "Motorola MC68010",
+    "tag": "mainpcb:maincpu"
+   },
+   {
+    "clock": 48000000,
+    "name": "Texas Instruments TMS34010",
+    "tag": "mainpcb:gsp"
+   },
+   {
+    "clock": 50000000,
+    "name": "Texas Instruments TMS34010",
+    "tag": "mainpcb:msp"
+   },
+   {
+    "clock": 8000000,
+    "name": "Analog Devices ADSP-2100",
+    "tag": "mainpcb:adsp"
+   },
+   {
+    "clock": 8000000,
+    "name": "Motorola MC68000",
+    "tag": "mainpcb:harddriv_sound:soundcpu"
+   },
+   {
+    "clock": 20000000,
+    "name": "Texas Instruments TMS320C10",
+    "tag": "mainpcb:harddriv_sound:sounddsp"
+   }
+  ],
+  "description": "Hard Drivin' (cockpit, rev 7)",
+  "displays": [
+   {
+    "height": "384",
+    "htotal": "640",
+    "pixclock": "16000000",
+    "refresh": "59.952038",
+    "vtotal": "417",
+    "width": "508"
+   }
+  ],
+  "manufacturer": "Atari Games",
+  "name": "harddriv",
+  "romof": null,
+  "roms": [
+   {
+    "crc": "af5d5c3e",
+    "name": "136052-7105.200r",
+    "offset": 0,
+    "region": "mainpcb:maincpu",
+    "sha1": "09ccf4aa933413b71b6a42796d42299e1334902f",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "3330a942",
+    "name": "136052-7113.210r",
+    "offset": 1,
+    "region": "mainpcb:maincpu",
+    "sha1": "b9210f6befd875be8bc1dbd31f44d0cb63166748",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "a668db0e",
+    "name": "136052-2106.200s",
+    "offset": 131072,
+    "region": "mainpcb:maincpu",
+    "sha1": "8ac405a0ba12bac9acabdb64970608d1b2b1a99b",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "ab689a94",
+    "name": "136052-2114.210s",
+    "offset": 131073,
+    "region": "mainpcb:maincpu",
+    "sha1": "c6c09e088bcc32030217e3521c862acce113bf93",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "908ccbbe",
+    "name": "136052-1110.200w",
+    "offset": 655360,
+    "region": "mainpcb:maincpu",
+    "sha1": "b6947ade664172a4553ea083fadfcb77c8c3938d",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "5b25023c",
+    "name": "136052-1118.210w",
+    "offset": 655361,
+    "region": "mainpcb:maincpu",
+    "sha1": "e6c5bf0de5ee071b8733fc890ae4f906732adde4",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "e1f455a3",
+    "name": "136052-1111.200x",
+    "offset": 786432,
+    "region": "mainpcb:maincpu",
+    "sha1": "68462a33bbfcc526d8f27ec082e55937a26ead8b",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "a7fc3aaa",
+    "name": "136052-1119.210x",
+    "offset": 786433,
+    "region": "mainpcb:maincpu",
+    "sha1": "ce8d4a8f83e25008cafa2a2242ed26b90b8517da",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "04316e6f",
+    "name": "136052-1121.45n",
+    "offset": 1,
+    "region": "mainpcb:harddriv_sound:soundcpu",
+    "sha1": "9836b8d16cebd6013834432c9e5a5aca0050c889",
+    "size": 32768,
+    "status": "good"
+   },
+   {
+    "crc": "0c446eec",
+    "name": "136052-1122.70n",
+    "offset": 0,
+    "region": "mainpcb:harddriv_sound:soundcpu",
+    "sha1": "53576c2800484d098cf250ab9a865314167c9d96",
+    "size": 32768,
+    "status": "good"
+   },
+   {
+    "crc": "1b77f171",
+    "name": "136052-1101.10h",
+    "offset": 0,
+    "region": "mainpcb:user1",
+    "sha1": "10434e492e4e9de5cd8543271914d5ba37c52b50",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "e50bec32",
+    "name": "136052-1103.10k",
+    "offset": 1,
+    "region": "mainpcb:user1",
+    "sha1": "30c504c730e8e568e78e06c756a23b8923e85b4b",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "998d3da2",
+    "name": "136052-1102.10j",
+    "offset": 131072,
+    "region": "mainpcb:user1",
+    "sha1": "6ed560c2132e33858c91b1f4ab0247399665b5fd",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "bc59a2b7",
+    "name": "136052-1104.10l",
+    "offset": 131073,
+    "region": "mainpcb:user1",
+    "sha1": "7dfde5bbaa0cf349b1ef5d6b076baded7330376a",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "a88411dc",
+    "name": "136052-1123.65a",
+    "offset": 0,
+    "region": "mainpcb:harddriv_sound:serialroms",
+    "sha1": "1fd53c7eadffa163d5423df2f8338757e58d5f2e",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "071a4309",
+    "name": "136052-1124.55a",
+    "offset": 65536,
+    "region": "mainpcb:harddriv_sound:serialroms",
+    "sha1": "c623bd51d6a4a56503fbf138138854d6a30b11d6",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "ebf391af",
+    "name": "136052-1125.45a",
+    "offset": 131072,
+    "region": "mainpcb:harddriv_sound:serialroms",
+    "sha1": "3c4097db8d625b994b39d46fe652585a74378ca0",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "f46ef09c",
+    "name": "136052-1126.30a",
+    "offset": 196608,
+    "region": "mainpcb:harddriv_sound:serialroms",
+    "sha1": "ba62f73ee3b33d8f26b430ffa468f8792dca23de",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "aed020f7",
+    "name": "harddriv.200e",
+    "offset": 0,
+    "region": "mainpcb:200e",
+    "sha1": "494fc2eb74b4924c07f18bef5e69efd5476deec2",
+    "size": 2048,
+    "status": "good"
+   },
+   {
+    "crc": "4a91835b",
+    "name": "harddriv.210e",
+    "offset": 0,
+    "region": "mainpcb:210e",
+    "sha1": "96f0087ba7e577748758a2fbe61225048862bb65",
+    "size": 2048,
+    "status": "good"
+   }
+  ],
+  "year": "1988"
+ },
+ "harddrivc": {
+  "cloneof": "harddriv",
+  "cpus": [
+   {
+    "clock": 8000000,
+    "name": "Motorola MC68010",
+    "tag": "mainpcb:maincpu"
+   },
+   {
+    "clock": 48000000,
+    "name": "Texas Instruments TMS34010",
+    "tag": "mainpcb:gsp"
+   },
+   {
+    "clock": 50000000,
+    "name": "Texas Instruments TMS34010",
+    "tag": "mainpcb:msp"
+   },
+   {
+    "clock": 8000000,
+    "name": "Analog Devices ADSP-2100",
+    "tag": "mainpcb:adsp"
+   },
+   {
+    "clock": 8000000,
+    "name": "Motorola MC68000",
+    "tag": "mainpcb:harddriv_sound:soundcpu"
+   },
+   {
+    "clock": 20000000,
+    "name": "Texas Instruments TMS320C10",
+    "tag": "mainpcb:harddriv_sound:sounddsp"
+   }
+  ],
+  "description": "Hard Drivin' (compact, rev 2)",
+  "displays": [
+   {
+    "height": "288",
+    "htotal": "646",
+    "pixclock": "12000000",
+    "refresh": "60.311206",
+    "vtotal": "308",
+    "width": "512"
+   }
+  ],
+  "manufacturer": "Atari Games",
+  "name": "harddrivc",
+  "romof": "harddriv",
+  "roms": [
+   {
+    "crc": "6252048b",
+    "name": "136068-2102.200r",
+    "offset": 0,
+    "region": "mainpcb:maincpu",
+    "sha1": "64caf3adfad6965768fc6d39a8bcde62fe6dfa9e",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "4805ba06",
+    "name": "136068-2101.210r",
+    "offset": 1,
+    "region": "mainpcb:maincpu",
+    "sha1": "e0c2d935ced05b8162f2925520422184a81d5294",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "8246f945",
+    "name": "136068-2104.200s",
+    "offset": 131072,
+    "region": "mainpcb:maincpu",
+    "sha1": "633b6c9a5d3e33d3035ccdb7b6ad883c334a4db9",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "729941e8",
+    "name": "136068-2103.210s",
+    "offset": 131073,
+    "region": "mainpcb:maincpu",
+    "sha1": "30d1e76803154195492acacf8c911d1f70cb92f5",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "e5ea74e4",
+    "name": "136068-1112.200w",
+    "offset": 655360,
+    "region": "mainpcb:maincpu",
+    "sha1": "58a8c0f16573fcc2c8739e6f72e485271e45af88",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "4d759891",
+    "name": "136068-1111.210w",
+    "offset": 655361,
+    "region": "mainpcb:maincpu",
+    "sha1": "b82087d9549ccc2a7eef22591dd8b869f2768075",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "293c153b",
+    "name": "136068-1114.200x",
+    "offset": 786432,
+    "region": "mainpcb:maincpu",
+    "sha1": "6300a50766b19ad203b5c7da28d51bf22054b39e",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "5630390d",
+    "name": "136068-1113.210x",
+    "offset": 786433,
+    "region": "mainpcb:maincpu",
+    "sha1": "cd1932cee70cddd1fb2110d1aeebb573a13f1339",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "3f20a396",
+    "name": "136052-3122.70n",
+    "offset": 0,
+    "region": "mainpcb:harddriv_sound:soundcpu",
+    "sha1": "f34819796087c543083f6baac6c778e0cdb7340a",
+    "size": 32768,
+    "status": "good"
+   },
+   {
+    "crc": "6346bca3",
+    "name": "136052-3121.45n",
+    "offset": 1,
+    "region": "mainpcb:harddriv_sound:soundcpu",
+    "sha1": "707dc86305142722a4757ba431cf6c7e9cf116b3",
+    "size": 32768,
+    "status": "good"
+   },
+   {
+    "crc": "1b77f171",
+    "name": "136052-1101.10h",
+    "offset": 0,
+    "region": "mainpcb:user1",
+    "sha1": "10434e492e4e9de5cd8543271914d5ba37c52b50",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "e50bec32",
+    "name": "136052-1103.10k",
+    "offset": 1,
+    "region": "mainpcb:user1",
+    "sha1": "30c504c730e8e568e78e06c756a23b8923e85b4b",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "998d3da2",
+    "name": "136052-1102.10j",
+    "offset": 131072,
+    "region": "mainpcb:user1",
+    "sha1": "6ed560c2132e33858c91b1f4ab0247399665b5fd",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "bc59a2b7",
+    "name": "136052-1104.10l",
+    "offset": 131073,
+    "region": "mainpcb:user1",
+    "sha1": "7dfde5bbaa0cf349b1ef5d6b076baded7330376a",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "a88411dc",
+    "name": "136052-1123.65a",
+    "offset": 0,
+    "region": "mainpcb:harddriv_sound:serialroms",
+    "sha1": "1fd53c7eadffa163d5423df2f8338757e58d5f2e",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "071a4309",
+    "name": "136052-1124.55a",
+    "offset": 65536,
+    "region": "mainpcb:harddriv_sound:serialroms",
+    "sha1": "c623bd51d6a4a56503fbf138138854d6a30b11d6",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "856548ff",
+    "name": "136052-3125.45a",
+    "offset": 131072,
+    "region": "mainpcb:harddriv_sound:serialroms",
+    "sha1": "e8a17b274185c5e4ecf5f9f1c211e18b3ef2456d",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "f46ef09c",
+    "name": "136052-1126.30a",
+    "offset": 196608,
+    "region": "mainpcb:harddriv_sound:serialroms",
+    "sha1": "ba62f73ee3b33d8f26b430ffa468f8792dca23de",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "560a0106",
+    "name": "harddrivc.200e",
+    "offset": 0,
+    "region": "mainpcb:200e",
+    "sha1": "7295a4f1255869c43c3cf146ddebaea62c30b850",
+    "size": 2048,
+    "status": "good"
+   },
+   {
+    "crc": "208bba53",
+    "name": "harddrivc.210e",
+    "offset": 0,
+    "region": "mainpcb:210e",
+    "sha1": "c9a36015a66917df528b84d20d255b6b96a90e76",
+    "size": 2048,
+    "status": "good"
+   }
+  ],
+  "year": "1990"
+ },
+ "racedriv": {
+  "cloneof": null,
+  "cpus": [
+   {
+    "clock": 8000000,
+    "name": "Motorola MC68010",
+    "tag": "mainpcb:maincpu"
+   },
+   {
+    "clock": 48000000,
+    "name": "Texas Instruments TMS34010",
+    "tag": "mainpcb:gsp"
+   },
+   {
+    "clock": 8000000,
+    "name": "Analog Devices ADSP-2100",
+    "tag": "mainpcb:adsp"
+   },
+   {
+    "clock": 40000000,
+    "name": "AT&T DSP32C",
+    "tag": "mainpcb:dsp32"
+   },
+   {
+    "clock": 20000000,
+    "name": "Texas Instruments TMS320C10",
+    "tag": "mainpcb:asic65:asic65cpu"
+   },
+   {
+    "clock": 8000000,
+    "name": "Motorola MC68000",
+    "tag": "mainpcb:harddriv_sound:soundcpu"
+   },
+   {
+    "clock": 20000000,
+    "name": "Texas Instruments TMS320C10",
+    "tag": "mainpcb:harddriv_sound:sounddsp"
+   }
+  ],
+  "description": "Race Drivin' (cockpit, rev 5)",
+  "displays": [
+   {
+    "height": "384",
+    "htotal": "640",
+    "pixclock": "16000000",
+    "refresh": "59.952038",
+    "vtotal": "417",
+    "width": "508"
+   }
+  ],
+  "manufacturer": "Atari Games",
+  "name": "racedriv",
+  "romof": null,
+  "roms": [
+   {
+    "crc": "0a78adca",
+    "name": "136077-5002.200r",
+    "offset": 0,
+    "region": "mainpcb:maincpu",
+    "sha1": "a44722340ff7c99253107be092bec2e87cae340b",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "74b4cd49",
+    "name": "136077-5001.210r",
+    "offset": 1,
+    "region": "mainpcb:maincpu",
+    "sha1": "48fc4344c092c9eb14249874ac305b87bba53e7e",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "c0cbdf4e",
+    "name": "136077-5004.200s",
+    "offset": 131072,
+    "region": "mainpcb:maincpu",
+    "sha1": "8c7f4f79e90dc7206d9d83d588822000a7a53c52",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "28eeff77",
+    "name": "136077-5003.210s",
+    "offset": 131073,
+    "region": "mainpcb:maincpu",
+    "sha1": "ccbc021c1230f5fbc2f51bdd4b82014f4a043d4a",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "11cd9323",
+    "name": "136077-5006.200t",
+    "offset": 262144,
+    "region": "mainpcb:maincpu",
+    "sha1": "43bdefb159c2a1c3cb07a629b8b924cdc29606f5",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "49c33786",
+    "name": "136077-5005.210t",
+    "offset": 262145,
+    "region": "mainpcb:maincpu",
+    "sha1": "9597b5b3d4b3bd113c60ba9bd7689c331bf26bbb",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "aef71435",
+    "name": "136077-4008.200u",
+    "offset": 393216,
+    "region": "mainpcb:maincpu",
+    "sha1": "7aa17ce2807bc9d8cd2721c8b709b5056f561055",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "446e62fb",
+    "name": "136077-4007.210u",
+    "offset": 393217,
+    "region": "mainpcb:maincpu",
+    "sha1": "af2464035f35467da6ce1073ce00d60ceb7666ea",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "e7e03770",
+    "name": "136077-4010.200v",
+    "offset": 524288,
+    "region": "mainpcb:maincpu",
+    "sha1": "98cbe3169efcb143f0b59b3154e5ea61f3c12f62",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "5dd8ebe4",
+    "name": "136077-4009.210v",
+    "offset": 524289,
+    "region": "mainpcb:maincpu",
+    "sha1": "98faf28169d16e88280fcd131c5988f040f48ad9",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "9a78b952",
+    "name": "136077-1012.200w",
+    "offset": 655360,
+    "region": "mainpcb:maincpu",
+    "sha1": "53270d4d8c28579ebda477a63c034f6d1b9e5a58",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "c5cd5491",
+    "name": "136077-1011.210w",
+    "offset": 655361,
+    "region": "mainpcb:maincpu",
+    "sha1": "ede5a3bb888342032d6758b0fb149451b6543d8b",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "a872792a",
+    "name": "136077-1014.200x",
+    "offset": 786432,
+    "region": "mainpcb:maincpu",
+    "sha1": "9269e397567940013e5f46cadfe2bad2ca1a2bc4",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "ca7b3e53",
+    "name": "136077-1013.210x",
+    "offset": 786433,
+    "region": "mainpcb:maincpu",
+    "sha1": "cdb3a6360893fd3dd2947c050dca8a4dfaa9ced9",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "e83a9c99",
+    "name": "136077-1016.200y",
+    "offset": 917504,
+    "region": "mainpcb:maincpu",
+    "sha1": "1d4093902133bb6da981f294e6947544c3564393",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "725806f3",
+    "name": "136077-4015.210y",
+    "offset": 917505,
+    "region": "mainpcb:maincpu",
+    "sha1": "0fa4601465dc94f27c71db789ad625bbcd254169",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": null,
+    "name": "136077-1027.30j",
+    "offset": 0,
+    "region": "mainpcb:asic65:asic65cpu",
+    "sha1": null,
+    "size": 8192,
+    "status": "nodump"
+   },
+   {
+    "crc": "fbc903a6",
+    "name": "136077-1032.70n",
+    "offset": 0,
+    "region": "mainpcb:harddriv_sound:soundcpu",
+    "sha1": "047240a5192918ced52d90b0555ba2e19a26329e",
+    "size": 32768,
+    "status": "good"
+   },
+   {
+    "crc": "e032ca7c",
+    "name": "136077-1033.45n",
+    "offset": 1,
+    "region": "mainpcb:harddriv_sound:soundcpu",
+    "sha1": "a80c980c8e58cf8cada72140e42a3cd1ea987b3d",
+    "size": 32768,
+    "status": "good"
+   },
+   {
+    "crc": "8b2a98da",
+    "name": "136077-2021.10h",
+    "offset": 0,
+    "region": "mainpcb:user1",
+    "sha1": "264b7ec218e423ea85c54e586f8ff091f033d472",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "c6d83d38",
+    "name": "136077-2023.10k",
+    "offset": 1,
+    "region": "mainpcb:user1",
+    "sha1": "e42c186a7fc0d88982b26eafdb834406b4ed3c8a",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "c0393c31",
+    "name": "136077-1022.10j",
+    "offset": 131072,
+    "region": "mainpcb:user1",
+    "sha1": "31726c01eb0d4650936908c90d45161197b7efba",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "1e2fb25f",
+    "name": "136077-1024.10l",
+    "offset": 131073,
+    "region": "mainpcb:user1",
+    "sha1": "4940091bbad6144bce091d2737191d266d4b0310",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "4207c784",
+    "name": "136077-4030.30e",
+    "offset": 0,
+    "region": "mainpcb:user3",
+    "sha1": "5ec410bd75c281ac57d9856d08ce65431f3af994",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "796486b3",
+    "name": "136077-4031.10e",
+    "offset": 1,
+    "region": "mainpcb:user3",
+    "sha1": "937e27c012c5fb457bee1b43fc8e075b3e9405b4",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "a88411dc",
+    "name": "136052-1123.65a",
+    "offset": 0,
+    "region": "mainpcb:harddriv_sound:serialroms",
+    "sha1": "1fd53c7eadffa163d5423df2f8338757e58d5f2e",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "071a4309",
+    "name": "136052-1124.55a",
+    "offset": 65536,
+    "region": "mainpcb:harddriv_sound:serialroms",
+    "sha1": "c623bd51d6a4a56503fbf138138854d6a30b11d6",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "856548ff",
+    "name": "136052-3125.45a",
+    "offset": 131072,
+    "region": "mainpcb:harddriv_sound:serialroms",
+    "sha1": "e8a17b274185c5e4ecf5f9f1c211e18b3ef2456d",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "f46ef09c",
+    "name": "136052-1126.30a",
+    "offset": 196608,
+    "region": "mainpcb:harddriv_sound:serialroms",
+    "sha1": "ba62f73ee3b33d8f26b430ffa468f8792dca23de",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "e93129a3",
+    "name": "136077-1017.45c",
+    "offset": 262144,
+    "region": "mainpcb:harddriv_sound:serialroms",
+    "sha1": "1221b08c8efbfd8cf6bfbfd956545f10bef48663",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "bfdf633c",
+    "name": "racedriv.200e",
+    "offset": 0,
+    "region": "mainpcb:200e",
+    "sha1": "b930f90c388e6773e6ba4254214a3a6076e610b0",
+    "size": 2048,
+    "status": "good"
+   },
+   {
+    "crc": "3d7c732e",
+    "name": "racedriv.210e",
+    "offset": 0,
+    "region": "mainpcb:210e",
+    "sha1": "e7de81d4a54327514fdd339e93c888c63a344d2c",
+    "size": 2048,
+    "status": "good"
+   }
+  ],
+  "year": "1990"
+ },
+ "racedrivc": {
+  "cloneof": "racedriv",
+  "cpus": [
+   {
+    "clock": 8000000,
+    "name": "Motorola MC68010",
+    "tag": "mainpcb:maincpu"
+   },
+   {
+    "clock": 48000000,
+    "name": "Texas Instruments TMS34010",
+    "tag": "mainpcb:gsp"
+   },
+   {
+    "clock": 8000000,
+    "name": "Analog Devices ADSP-2100",
+    "tag": "mainpcb:adsp"
+   },
+   {
+    "clock": 40000000,
+    "name": "AT&T DSP32C",
+    "tag": "mainpcb:dsp32"
+   },
+   {
+    "clock": 20000000,
+    "name": "Texas Instruments TMS320C10",
+    "tag": "mainpcb:asic65:asic65cpu"
+   },
+   {
+    "clock": 8000000,
+    "name": "Motorola MC68000",
+    "tag": "mainpcb:harddriv_sound:soundcpu"
+   },
+   {
+    "clock": 20000000,
+    "name": "Texas Instruments TMS320C10",
+    "tag": "mainpcb:harddriv_sound:sounddsp"
+   }
+  ],
+  "description": "Race Drivin' (compact, rev 5)",
+  "displays": [
+   {
+    "height": "288",
+    "htotal": "646",
+    "pixclock": "12000000",
+    "refresh": "60.311206",
+    "vtotal": "308",
+    "width": "512"
+   }
+  ],
+  "manufacturer": "Atari Games",
+  "name": "racedrivc",
+  "romof": "racedriv",
+  "roms": [
+   {
+    "crc": "ae8f79bd",
+    "name": "136078-5002.200r",
+    "offset": 0,
+    "region": "mainpcb:maincpu",
+    "sha1": "054f2d1948d6d03832c4557c3dd7667c0784716d",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "ad896e7f",
+    "name": "136078-5001.210r",
+    "offset": 1,
+    "region": "mainpcb:maincpu",
+    "sha1": "7b047f0c972fac075db00faf19cdf9ccdcef5c63",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "b8650bee",
+    "name": "136078-5004.200s",
+    "offset": 131072,
+    "region": "mainpcb:maincpu",
+    "sha1": "a9905081e622e4a4fcec9aa08b87566ecdb9198b",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "bf56a29f",
+    "name": "136078-5003.210s",
+    "offset": 131073,
+    "region": "mainpcb:maincpu",
+    "sha1": "1ef17dab9ed1fd92b005dd31f7dccf1535583ec4",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "8559a61b",
+    "name": "136078-5006.200t",
+    "offset": 262144,
+    "region": "mainpcb:maincpu",
+    "sha1": "ad1796c39ac9cbb50e8a97d9e8c9cd5adfd0ff5e",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "33d654b1",
+    "name": "136078-5005.210t",
+    "offset": 262145,
+    "region": "mainpcb:maincpu",
+    "sha1": "1e6886d49008b13886184c9ced0f6bd642d9562c",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "5b119d16",
+    "name": "136078-4008.200u",
+    "offset": 393216,
+    "region": "mainpcb:maincpu",
+    "sha1": "ec808b5e325ab1a6dbddcef75871cd0126a98377",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "fa234861",
+    "name": "136078-4007.210u",
+    "offset": 393217,
+    "region": "mainpcb:maincpu",
+    "sha1": "4c6753c64f942f6ea98f96e1e8f4de880800573e",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "150acc9e",
+    "name": "136078-4010.200v",
+    "offset": 524288,
+    "region": "mainpcb:maincpu",
+    "sha1": "e172e6a1ed5ac0791fe053d4bde2d0c62202f399",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "85a9aa37",
+    "name": "136078-4009.210v",
+    "offset": 524289,
+    "region": "mainpcb:maincpu",
+    "sha1": "e403a41c44edfca190cb15452d67a427de9cf56e",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "9a78b952",
+    "name": "136077-1012.200w",
+    "offset": 655360,
+    "region": "mainpcb:maincpu",
+    "sha1": "53270d4d8c28579ebda477a63c034f6d1b9e5a58",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "c5cd5491",
+    "name": "136077-1011.210w",
+    "offset": 655361,
+    "region": "mainpcb:maincpu",
+    "sha1": "ede5a3bb888342032d6758b0fb149451b6543d8b",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "a872792a",
+    "name": "136077-1014.200x",
+    "offset": 786432,
+    "region": "mainpcb:maincpu",
+    "sha1": "9269e397567940013e5f46cadfe2bad2ca1a2bc4",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "ca7b3e53",
+    "name": "136077-1013.210x",
+    "offset": 786433,
+    "region": "mainpcb:maincpu",
+    "sha1": "cdb3a6360893fd3dd2947c050dca8a4dfaa9ced9",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "aa296776",
+    "name": "136078-4016.200y",
+    "offset": 917504,
+    "region": "mainpcb:maincpu",
+    "sha1": "991e33568e47a82cb183724f7df1f835850c30fa",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "030c803d",
+    "name": "136078-4015.210y",
+    "offset": 917505,
+    "region": "mainpcb:maincpu",
+    "sha1": "bb249c9d1d28f6851a529b93c4f96d80665f2bce",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": null,
+    "name": "136077-1027.30j",
+    "offset": 0,
+    "region": "mainpcb:asic65:asic65cpu",
+    "sha1": null,
+    "size": 8192,
+    "status": "nodump"
+   },
+   {
+    "crc": "fbc903a6",
+    "name": "136077-1032.70n",
+    "offset": 0,
+    "region": "mainpcb:harddriv_sound:soundcpu",
+    "sha1": "047240a5192918ced52d90b0555ba2e19a26329e",
+    "size": 32768,
+    "status": "good"
+   },
+   {
+    "crc": "e032ca7c",
+    "name": "136077-1033.45n",
+    "offset": 1,
+    "region": "mainpcb:harddriv_sound:soundcpu",
+    "sha1": "a80c980c8e58cf8cada72140e42a3cd1ea987b3d",
+    "size": 32768,
+    "status": "good"
+   },
+   {
+    "crc": "9831fe73",
+    "name": "136077-1021.10h",
+    "offset": 0,
+    "region": "mainpcb:user1",
+    "sha1": "5215ee89a0014399b7d829e443b16590a4679844",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "74bf0e0e",
+    "name": "136077-1023.10k",
+    "offset": 1,
+    "region": "mainpcb:user1",
+    "sha1": "a3d91ecf13c3619e073324517a4a5afaae831982",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "c0393c31",
+    "name": "136077-1022.10j",
+    "offset": 131072,
+    "region": "mainpcb:user1",
+    "sha1": "31726c01eb0d4650936908c90d45161197b7efba",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "1e2fb25f",
+    "name": "136077-1024.10l",
+    "offset": 131073,
+    "region": "mainpcb:user1",
+    "sha1": "4940091bbad6144bce091d2737191d266d4b0310",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "d355a1c2",
+    "name": "136078-1030.30e",
+    "offset": 0,
+    "region": "mainpcb:user3",
+    "sha1": "6b0fb52dbecbe574959739f49c3c0fccdd5cebdb",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "18fd5f44",
+    "name": "136078-1031.10e",
+    "offset": 1,
+    "region": "mainpcb:user3",
+    "sha1": "1c3bd780b72cfa61bcbd82683da18b4ee8d03a6d",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "a88411dc",
+    "name": "136052-1123.65a",
+    "offset": 0,
+    "region": "mainpcb:harddriv_sound:serialroms",
+    "sha1": "1fd53c7eadffa163d5423df2f8338757e58d5f2e",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "071a4309",
+    "name": "136052-1124.55a",
+    "offset": 65536,
+    "region": "mainpcb:harddriv_sound:serialroms",
+    "sha1": "c623bd51d6a4a56503fbf138138854d6a30b11d6",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "856548ff",
+    "name": "136052-3125.45a",
+    "offset": 131072,
+    "region": "mainpcb:harddriv_sound:serialroms",
+    "sha1": "e8a17b274185c5e4ecf5f9f1c211e18b3ef2456d",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "f46ef09c",
+    "name": "136052-1126.30a",
+    "offset": 196608,
+    "region": "mainpcb:harddriv_sound:serialroms",
+    "sha1": "ba62f73ee3b33d8f26b430ffa468f8792dca23de",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "e93129a3",
+    "name": "136077-1017.45c",
+    "offset": 262144,
+    "region": "mainpcb:harddriv_sound:serialroms",
+    "sha1": "1221b08c8efbfd8cf6bfbfd956545f10bef48663",
+    "size": 65536,
+    "status": "good"
+   },
+   {
+    "crc": "2c0f7715",
+    "name": "racedrivc.200e",
+    "offset": 0,
+    "region": "mainpcb:200e",
+    "sha1": "79cf3a6cd48fc4a86cd94e823243fc0cd4bffa57",
+    "size": 2048,
+    "status": "good"
+   },
+   {
+    "crc": "2e843742",
+    "name": "racedrivc.210e",
+    "offset": 0,
+    "region": "mainpcb:210e",
+    "sha1": "bc73ab0270cdf45aaa1a19703e8c3aa916578ef0",
+    "size": 2048,
+    "status": "good"
+   }
+  ],
+  "year": "1990"
+ }
+}

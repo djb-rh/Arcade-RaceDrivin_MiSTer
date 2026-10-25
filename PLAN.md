@@ -151,12 +151,14 @@ Options:
 | C. Emulate the DSP32C on the HPS ARM (Cortex-A9) | Enough compute, but PIO register accesses from the 68010 are synchronous bus cycles; bridging them to Linux user space breaks timing and the stock-Main convention. Keep only as a desperation fallback. |
 | D. Translate the DSP32C program ahead of time into native FPGA code | Game data (segment tables) is uploaded at runtime and the program is data-driven; translation buys nothing over A. Rejected. |
 
-Pre-work before HDL (cheap, de-risks A): instrument MAME's `dsp32.cpp` to log
-every distinct opcode form executed, the maximum address touched in each RAM
-region (does the program really use 256 KiB at 0x600000 or only about 128
-KiB?), instructions per frame, and the PIO transaction pattern. This fixes
-the implementation subset, the RAM budget (BRAM vs SDRAM) and the required
-throughput.
+Pre-work done (M0, NOTES.md section 7): MAME instrumented with
+`mame/dsp32-measure.patch`, 240 s of attract on both sets. Results: 63
+distinct MAME handlers executed, no `do` loops, no DAU store variants, no
+serial or interrupt paths; the chip spins at 10 M instr/s but 99% of that is
+a mailbox polling loop and real DAU work is about 16,000 operations per
+second; the 256 KiB region is only ever read below 0x620000, so **128 KiB
+of block RAM suffices**. So: correctness of the subset is the whole job,
+throughput is not a constraint, and the RAM fits where the MSP was.
 
 ### 2.2 ASIC65 (TMS32015 with undumped mask ROM)
 
@@ -223,10 +225,10 @@ sound path uses (it does not in MAME; the sound board raises no main-CPU IRQ).
 The cockpit build is near full. Removing the MSP (128 KiB BRAM plus logic) and
 the cockpit-only diagnostics pays for the DSP32C (estimate 4-8k ALMs, a dozen
 DSP blocks, 8 KiB + 2 KiB BRAM) and the DSK RAM (64 KiB BRAM). The DSP32C's
-256 KiB RAM region is the swing item: if MAME tracing shows the program uses
-about 128 KiB, it fits in the BRAM the MSP vacates; otherwise it goes to SDRAM
-beside VRAM with a small cache. DSK ROM (256 KiB) lives in DDR like the other
-ROMs.
+256 KiB RAM region was the swing item; MAME tracing (NOTES.md section 7)
+shows the program never reads above 0x61FFFF, so a 128 KiB block RAM with
+writes above it dropped fits where the MSP was. DSK ROM (256 KiB) lives in
+DDR like the other ROMs.
 
 ## 3. Cabinet I/O: what MiSTer offers and what to build
 
@@ -494,7 +496,7 @@ releases/   RBF + MRA
 | Risk | Mitigation |
 |---|---|
 | DSP32C DAU float semantics differ from MAME's `double` model in visible ways | Lock-step traces on real program data; accept differences only where MAME is itself approximate |
-| DSP32C RAM footprint exceeds free BRAM | Measure in MAME first; SDRAM fallback with cache |
+| DSP32C RAM footprint exceeds free BRAM | Measured: 128 KiB suffices for rev 5 (NOTES.md section 7); SDRAM fallback only if another revision needs more |
 | 68010 pacing model breaks Race Drivin' boot or link timing | Cycle-based pacing in M8 if traces diverge |
 | GSP protection counter or 2bpp expander path misbehaves on the compact | Investigate in MAME before M6; frame-hash comparison |
 | Linux build box unavailable | Docker with Rosetta on the Mac as fallback |
