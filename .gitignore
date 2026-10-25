@@ -1,0 +1,43 @@
+# Quartus build products
+/build/
+/generated/
+/output_files/
+/db/
+/incremental_db/
+/*.rpt
+/*.summary
+/*.smsg
+/*.jdi
+/*.pin
+/*.sof
+/*.rbf
+/*.cdf
+/*.qws
+/build_id.v
+*.bak
+*.orig
+*.rej
+
+# Simulation
+/sim/obj_dir/
+/sim/build/
+*.vcd
+*.fst
+
+# ROM data: never committed. Tools read MAME-style zips from outside the tree.
+/roms/
+*.zip
+*.nvm
+*.bin
+*.hex
+!tools/testdata/*.hex
+
+# KiCad
+hw/**/*-backups/
+hw/**/*.kicad_prl
+hw/**/fp-info-cache
+hw/**/~*.lck
+
+__pycache__/
+.DS_Store
+.claude/
