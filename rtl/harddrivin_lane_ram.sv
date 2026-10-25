@@ -7,7 +7,10 @@ module harddrivin_lane_ram #(
   parameter integer ADDR_WIDTH = 14,
   // Optional power-up contents (hex, one byte per line) for each lane.
   parameter         INIT_HI_FILE = "",
-  parameter         INIT_LO_FILE = ""
+  parameter         INIT_LO_FILE = "",
+  // 1: power up as an erased EEPROM / unprogrammed RAM, every byte 0xff
+  //    (what MAME's parallel EEPROM devices hold with no NVRAM file).
+  parameter bit     INIT_ONES    = 0
 ) (
   input  logic                  clk_i,
   input  logic                  en_i,
@@ -21,6 +24,12 @@ module harddrivin_lane_ram #(
   (* ramstyle = "M10K, no_rw_check" *) logic [7:0] mem_hi [0:WORDS-1];
   (* ramstyle = "M10K, no_rw_check" *) logic [7:0] mem_lo [0:WORDS-1];
   initial begin
+    if (INIT_ONES) begin
+      for (int i = 0; i < WORDS; i++) begin
+        mem_hi[i] = 8'hff;
+        mem_lo[i] = 8'hff;
+      end
+    end
     if (INIT_HI_FILE != "") $readmemh(INIT_HI_FILE, mem_hi);
     if (INIT_LO_FILE != "") $readmemh(INIT_LO_FILE, mem_lo);
   end

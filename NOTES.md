@@ -621,3 +621,63 @@ with the GHDL-converted TG68K, compared write-for-write with MAME
 - MAME 0.289 Lua: `emu.register_stop` is gone; taps/logs must be reachable
   from globals or they are collected and the next tapped write segfaults
   MAME; `machine.time` inside a tap also crashed. See docs/simulation.md.
+
+## 9. DSK board in simulation (M2, 2026-10-25)
+
+Added to the core: `rtl/dsk/harddrivin_dsk_board.sv` (64 KiB DSK RAM, the
+2816-pair zero-power RAM, control latch, ASIC65 hookup, DSP32C PIO
+placeholder) and `rtl/asic65/asic65_sim.sv` (MAME's command-level ASIC65,
+STANDARD map). The 256 KiB track-ROM window 0x940000-0x9FFFFF is served by
+the main bus from DDR (byte offset 0x1A0000, MRA index 0), repeating every
+0x20000 words like MAME's `hd68k_dsk_small_rom_r`.
+
+- **Result: the write sequence matches MAME from reset to the slapstic.**
+  930,458 identical writes (was 884,235), sim 1.494 s, MAME 1.585 s. In the
+  newly covered span the program read DSK RAM 608 times, DSK ZRAM 29, the
+  track ROM window 1,028, ASIC65 data 61, ASIC65 status 40, the PIO window
+  3 — all answered as MAME answers them.
+- **The divergence is the slapstic.** At MAME 1.585 s the program copies
+  bytes from 0x0E0000-0x0E004F into DSK RAM 0x900F34 one at a time; MAME's
+  137412 had switched the window to bank 1 (its data 0x32/0x3C/0x37 at
+  +0/+4/+6 is bank 1 of the 200Y/210Y pair), the core reads bank 0. This is
+  the boundary PLAN.md section 2.3 expected for the stock set: the user's
+  cabinets run slapstic-free ROMs (`slapfree.py`), so the sim's next step is
+  either the slapstic-free set on both sides (MAME would need a variant
+  without the slapstic device) or an HDL 137412 (MAME `slapstic.cpp` has
+  the whole state machine; it would also let stock ROM sets boot).
+- **ASIC65 arithmetic verified against MAME**: `tools/sim.py asic65-test
+  <run>.asic65.log` replays the logged command/parameter stream through
+  `asic65_sim` and checks every result the 68010 read. The 20 s cockpit
+  capture (1 RESET, 13 MATRIXMULT, 36 SIN, 36 COS; 151 results) matches
+  bit for bit. SIN/COS use a 16384-entry quarter-wave table
+  (`rtl/asic65/asic65_sin.hex`, generated and self-checked for all 65536
+  arguments by `tools/asic65_sintab.py`); MAME truncates toward zero, so
+  the negative half is the negated table and COS(p) = SIN(16384 - p). A
+  result read takes three clocks (operand select, 32x16 multiplies, sum
+  >> 14). TMATRIXMULT, TRANSFORM, YORIGIN and REFLECT are implemented from
+  MAME's code but not yet exercised by a log (the boot sequence does not
+  reach them before the slapstic).
+- **ASIC65 reset semantics** (MAME `reset_line`): asserting reset (latch
+  function 4 written with 0) forgets the command; releasing it re-issues the
+  command written while held (indices cleared). Writes to the parameter and
+  command ports are accepted while held. The game only toggles it at
+  power-up and once at 1.434 s.
+- **DSK zero-power RAM**: MAME's two 2816 devices start all-0xFF with no
+  NVRAM file (and the capture was made with a fresh NVRAM directory), so the
+  lane RAM has `INIT_ONES`. MAME ignores ZW1/ZW2 for this RAM; so does the
+  core. Saving it to the MiSTer NVRAM file is still to do (the main board's
+  200E/210E save already exists as index 2).
+- **DSK RAM** starts zeroed in MAME (it is the tail of the `user3` ROM
+  region) and in the core. The track ROM region's unused upper 128 KiB
+  reads 0x00 in MAME and 0xFF from romimage.py's fill; the program has not
+  touched it.
+- **DSP32C timeline for M3** (MAME, cockpit): the DSP32C runs from power-up
+  until the program asserts DSPRESTN at 36 us (MAME's device is not reset
+  by the latch's power-up state), is released at 1.600 s and immediately
+  tested through the PIO: PCR writes, PAR = 0x5432 then a PDR write, PAR
+  read back expecting 0x5433 (`m_par | 1`), the same with 0x9876, then the
+  upload begins (PIO reg 2 writes from 1.60027 s). The DSK board module
+  answers PIO reads with 0 until M3.
+- **Pacing**: the sim reaches the slapstic point 5.7% earlier than MAME
+  (1.494 s vs 1.585 s) against 4.2% at the first DSK access; the DSK
+  accesses themselves take two to five 48 MHz clocks.

@@ -132,6 +132,8 @@ module harddrivin_milestone #(
   parameter bit MSP = 1,
   parameter        ZERO_RAM_INIT_HI_FILE = "",
   parameter        ZERO_RAM_INIT_LO_FILE = "",
+  // ASIC65 sine table (tools/asic65_sintab.py), relative to the project.
+  parameter        ASIC65_SIN_FILE = "rtl/asic65/asic65_sin.hex",
   // 1: every diagnostic page is captured; 0: only pages 50-54 (GSP boot),
   // 72 (runtime) and 76 (display-interrupt latency) - the other 32 pages'
   // 4096 snapshot flops and their probes drop out of the fit
@@ -1942,7 +1944,7 @@ module harddrivin_milestone #(
   logic main_skip_fetch;
   logic main_cycle;
   logic main_bus_ready;
-  logic [19:1] main_rom_addr;
+  logic [20:1] main_rom_addr;   // DDR word address: program ROM, then DSK ROM at 0xd0000
   logic main_rom_req, main_rom_ack;
   logic [15:0] main_rom_data;
   logic [23:0] main_last_fetch_addr;
@@ -2086,6 +2088,10 @@ module harddrivin_milestone #(
     .msp_host_wdata_o(msp_host_src_wdata),
     .msp_host_rdata_i(msp_host_src_rdata),
     .msp_host_ack_i(msp_host_src_ack),
+    .dsk_req_o(dsk_host_req), .dsk_we_o(dsk_host_we),
+    .dsk_addr_o(dsk_host_addr), .dsk_be_o(dsk_host_be),
+    .dsk_wdata_o(dsk_host_wdata), .dsk_rdata_i(dsk_host_rdata),
+    .dsk_ack_i(dsk_host_ack),
     .last_fetch_addr_o(main_last_fetch_addr),
     .last_read_addr_o(main_last_read_addr),
     .last_write_addr_o(main_last_write_addr),
@@ -2093,6 +2099,25 @@ module harddrivin_milestone #(
     .read_count_o(main_read_count), .write_count_o(main_write_count),
     .diagnostic_o(main_diagnostic)
   );
+
+  // Race Drivin' DSK board (RAM, zero-power RAM, ASIC65, control latch);
+  // the DSP32C itself arrives with M3.
+  logic        dsk_host_req, dsk_host_we, dsk_host_ack;
+  logic [23:1] dsk_host_addr;
+  logic [1:0]  dsk_host_be;
+  logic [15:0] dsk_host_wdata, dsk_host_rdata;
+  logic [7:0]  dsk_latch;
+  logic        dsk_dsp_reset_n, dsk_dsp_halt_n, dsk_led;
+  harddrivin_dsk_board #(.ASIC65_SIN_FILE(ASIC65_SIN_FILE)) u_dsk (
+    .clk_i(clk_gsp), .rst_i(rst_gsp),
+    .req_i(dsk_host_req), .we_i(dsk_host_we), .addr_i(dsk_host_addr),
+    .be_i(dsk_host_be), .wdata_i(dsk_host_wdata),
+    .rdata_o(dsk_host_rdata), .ack_o(dsk_host_ack),
+    .latch_o(dsk_latch), .dsp_reset_n_o(dsk_dsp_reset_n),
+    .dsp_halt_n_o(dsk_dsp_halt_n), .led_o(dsk_led)
+  );
+  logic unused_dsk;
+  assign unused_dsk = ^{dsk_latch, dsk_dsp_reset_n, dsk_dsp_halt_n, dsk_led};
 
   // Two DDR read clients share the MiSTer port: the 68010 ROM (1 MiB at
   // 0x30000000) and the ADSP sequential EPROM image (256 KiB at
@@ -2109,7 +2134,7 @@ module harddrivin_milestone #(
 
   harddrivin_ddr_rom #(.SWAP_BYTES(1)) u_main_rom (
     .clk_i(clk_gsp), .rst_i(rst_gsp),
-    .rom_addr_i({1'b0, main_rom_addr}), .rom_req_i(main_rom_req),
+    .rom_addr_i(main_rom_addr), .rom_req_i(main_rom_req),
     .rom_ack_o(main_rom_ack), .rom_data_o(main_rom_data), .busy_o(ddr_a_busy),
     .DDRAM_BUSY(ddr_a_ddr_busy), .DDRAM_BURSTCNT(ddr_a_burst),
     .DDRAM_ADDR(ddr_a_addr), .DDRAM_DOUT(DDRAM_DOUT),

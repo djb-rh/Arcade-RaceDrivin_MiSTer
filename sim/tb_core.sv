@@ -20,6 +20,9 @@ module tb_core;
 `ifndef ZRAM_LO_FILE
   `define ZRAM_LO_FILE "zram_lo.hex"
 `endif
+`ifndef ASIC65_SIN_FILE
+  `define ASIC65_SIN_FILE "rtl/asic65/asic65_sin.hex"
+`endif
   localparam bit COCKPIT = 1;
 
   logic clk50 = 0;
@@ -64,7 +67,8 @@ module tb_core;
     .MSP(1'b0),          // Race Drivin' has no MSP
     .DIAG_FULL(1'b0),
     .ZERO_RAM_INIT_HI_FILE(`ZRAM_HI_FILE),
-    .ZERO_RAM_INIT_LO_FILE(`ZRAM_LO_FILE)
+    .ZERO_RAM_INIT_LO_FILE(`ZRAM_LO_FILE),
+    .ASIC65_SIN_FILE(`ASIC65_SIN_FILE)
   ) u_core (
     .clk_50_i(clk50), .rst_i(rst), .clk_core_o(clk_core), .ce_pix_o(ce_pix),
     .hblank_o(hblank), .vblank_o(vblank), .hsync_o(hsync), .vsync_o(vsync),
@@ -177,9 +181,9 @@ module tb_core;
     end
     for (int i = 1; i <= ms; i++) begin
       #1_000_000_000;  // 1 ms
-      $display("t=%0d ms  68k steps %0d fetch %0d wr %0d addr %06x | gsp pc %08x st %0d | adsp pc %04x run %0d | ddr rd %0d | sdram rd %0d wr %0d | snd rst %0d",
+      $display("t=%0d ms  68k steps %0d fetch %0d wr %0d addr %06x | gsp pc %08x st %0d | adsp pc %04x run %0d | dsk latch %02x | ddr rd %0d | sdram rd %0d wr %0d | snd rst %0d",
                i, bus_steps, fetches, writes, last_addr[23:0],
-               u_core.gsp_pc, u_core.gsp_state, u_core.adsp_pc, u_core.adsp_running,
+               u_core.gsp_pc, u_core.gsp_state, u_core.adsp_pc, u_core.adsp_running, u_core.dsk_latch,
                u_ddr.reads, u_sdram.reads, u_sdram.writes, u_core.u_sound_board.rst_i);
     end
     if (trace_fd != 0) $fclose(trace_fd);

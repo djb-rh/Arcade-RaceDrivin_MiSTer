@@ -9,6 +9,8 @@ module harddrivin_main_bus #(
   //    after ~100 us).  0: the real board owns the flags and data latches.
   parameter bit SOUND_STUB = 1,
   parameter bit COCKPIT = 0,
+  // 1: Race Drivin' DSK board decode (0x85cxxx I/O, 0x9xxxxx RAM/ROM).
+  parameter bit DSK = 1,
   // Development only: preload the battery-backed settings RAM (zero-power
   // RAM, 0xff4000-0xff4fff) so the ROM boots as a calibrated cabinet.  A
   // release must leave these empty and require the player's calibration.
@@ -26,7 +28,8 @@ module harddrivin_main_bus #(
   output logic [15:0] rdata_o,
   output logic        ready_o,
 
-  output logic [19:1] rom_addr_o,
+  // DDR word address: program ROM at 0, DSK track ROM at 0xd0000.
+  output logic [20:1] rom_addr_o,
   output logic        rom_req_o,
   input  logic        rom_ack_i,
   input  logic [15:0] rom_data_i,
@@ -90,6 +93,17 @@ module harddrivin_main_bus #(
   input  logic [15:0] msp_host_rdata_i,
   input  logic        msp_host_ack_i,
 
+  // DSK board (harddrivin_dsk_board): 0x85c000-0x85cfff and
+  // 0x900000-0x93ffff; the ROM window 0x940000-0x9fffff goes out through
+  // the ROM port like the program ROM.
+  output logic        dsk_req_o,
+  output logic        dsk_we_o,
+  output logic [23:1] dsk_addr_o,
+  output logic [1:0]  dsk_be_o,
+  output logic [15:0] dsk_wdata_o,
+  input  logic [15:0] dsk_rdata_i,
+  input  logic        dsk_ack_i,
+
   output logic [23:0] last_fetch_addr_o,
   output logic [23:0] last_read_addr_o,
   output logic [23:0] last_write_addr_o,
@@ -110,10 +124,12 @@ module harddrivin_main_bus #(
   logic host_pending_q;
   logic adsp_pending_q;
   logic adsp_write_q;
+  logic dsk_pending_q;
+  logic dsk_write_q;
   logic host_msp_q;
   logic host_write_q;
   logic pending_cycle_q;
-  logic [19:1] pending_rom_addr_q;
+  logic [20:1] pending_rom_addr_q;
   logic [3:0] vector_match_q;
   logic reset_pc_fetch_q;
   logic execution_fetch_q;
@@ -139,6 +155,9 @@ module harddrivin_main_bus #(
   logic compact_adc8_select;
   logic compact_adc12_select;
   logic adsp_select;
+  logic dsk_select;
+  logic dsk_rom_select;
+  logic [20:1] rom_word_addr;
   logic duart_select;
   logic snd_select;
   logic snd_data_select;
@@ -231,6 +250,15 @@ module harddrivin_main_bus #(
   assign compact_adc8_select = addr_i[23:19] == 5'b10110;
   assign compact_adc12_select = addr_i[23:19] == 5'b10111;
   assign adsp_select = addr_i[23:18] == 6'b100000;
+  // DSK board (MAME init_dsk): I/O at 0x85c000-0x85cfff (DSP32C PIO, control
+  // latch), RAM / zero-power RAM / ASIC65 at 0x900000-0x93ffff, and the
+  // track ROM window 0x940000-0x9fffff, which repeats the 256 KiB ROM held
+  // in DDR at byte offset 0x1a0000 (MRA index 0, word address 0xd0000).
+  assign dsk_select = DSK && ((addr_i[23:12] == 12'h85c) ||
+                              (addr_i[23:20] == 4'h9 && addr_i[19:18] == 2'b00));
+  assign dsk_rom_select = DSK && (addr_i[23:20] == 4'h9) && (addr_i[19:18] != 2'b00);
+  assign rom_word_addr = dsk_rom_select ? (20'hd0000 + {3'b000, addr_i[17:1]})
+                                        : {1'b0, addr_i[19:1]};
   // MC68681 DUART at 0xff0000-0xff001f on the upper byte lane (MAME umask
   // 0xff00).  Only the counter/timer is modelled: the game programs ACR =
   // 0x30 (counter mode, X1/16 = 230.4 kHz), preloads 0xffff, starts it and
@@ -244,7 +272,7 @@ module harddrivin_main_bus #(
   assign snd_status_select = snd_select && (addr_i[15:14] == 2'b01);
   assign snd_reset_select  = snd_select && (addr_i[15:14] == 2'b11);
   assign new_cycle = (cycle_i != done_cycle_q) && !rom_pending_q &&
-                     !local_pending_q && !host_pending_q && !adsp_pending_q;
+                     !local_pending_q && !host_pending_q && !adsp_pending_q && !dsk_pending_q;
   assign local_read_start = new_cycle && (busstate_i == BUS_READ) &&
                             (main_ram_select || zero_ram_select);
   assign local_write_start = new_cycle && (busstate_i == BUS_WRITE) &&
@@ -480,11 +508,18 @@ module harddrivin_main_bus #(
       adsp_we_o         <= 1'b0;
       adsp_addr_o       <= 17'd0;
       adsp_wdata_o      <= 16'h0000;
+      dsk_pending_q     <= 1'b0;
+      dsk_write_q       <= 1'b0;
+      dsk_req_o         <= 1'b0;
+      dsk_we_o          <= 1'b0;
+      dsk_addr_o        <= 23'd0;
+      dsk_be_o          <= 2'b00;
+      dsk_wdata_o       <= 16'h0000;
       host_msp_q        <= 1'b0;
       host_write_q      <= 1'b0;
       pending_cycle_q   <= 1'b0;
-      pending_rom_addr_q <= 19'd0;
-      rom_addr_o        <= 19'd0;
+      pending_rom_addr_q <= 20'd0;
+      rom_addr_o        <= 20'd0;
       rom_req_o         <= 1'b0;
       watchdog_clear_o  <= 1'b0;
       irq_clear_o       <= 1'b0;
@@ -530,7 +565,7 @@ module harddrivin_main_bus #(
       // the target ROM's calibration call precisely: 0x019c64 is its entry;
       // 0x01921e is the instruction after it returns to the caller.
       if ((cycle_i != done_cycle_q) && !rom_pending_q && !local_pending_q &&
-          !host_pending_q && !adsp_pending_q &&
+          !host_pending_q && !adsp_pending_q && !dsk_pending_q &&
           (busstate_i == BUS_FETCH)) begin
         if (addr_i[23:0] == 24'h019c64)
           wheel_calibration_mode_q <= 1'b1;
@@ -564,15 +599,15 @@ module harddrivin_main_bus #(
         read_count_o  <= read_count_o + 32'd1;
 
         case (pending_rom_addr_q)
-          19'h00000: vector_match_q[0] <= rom_data_i == 16'hffff;
-          19'h00001: vector_match_q[1] <= rom_data_i == 16'hc000;
-          19'h00002: vector_match_q[2] <= rom_data_i == 16'h0000;
-          19'h00003: vector_match_q[3] <= rom_data_i == 16'h021c;
+          20'h00000: vector_match_q[0] <= rom_data_i == 16'hffff;
+          20'h00001: vector_match_q[1] <= rom_data_i == 16'hc000;
+          20'h00002: vector_match_q[2] <= rom_data_i == 16'h0000;
+          20'h00003: vector_match_q[3] <= rom_data_i == 16'h021c;
           default: ;
         endcase
-        if (pending_rom_addr_q == 19'h0010e)
+        if (pending_rom_addr_q == 20'h0010e)
           reset_pc_fetch_q <= 1'b1;
-        if (pending_rom_addr_q > 19'h00110)
+        if (pending_rom_addr_q > 20'h00110)
           execution_fetch_q <= 1'b1;
       end
 
@@ -586,6 +621,18 @@ module harddrivin_main_bus #(
         done_cycle_q   <= pending_cycle_q;
         adsp_pending_q <= 1'b0;
         adsp_req_o     <= 1'b0;
+      end
+
+      if (dsk_pending_q && dsk_ack_i) begin
+        if (!dsk_write_q) begin
+          rdata_o      <= dsk_rdata_i;
+          read_count_o <= read_count_o + 32'd1;
+        end else begin
+          write_count_o <= write_count_o + 32'd1;
+        end
+        done_cycle_q  <= pending_cycle_q;
+        dsk_pending_q <= 1'b0;
+        dsk_req_o     <= 1'b0;
       end
 
       if (host_pending_q &&
@@ -609,7 +656,7 @@ module harddrivin_main_bus #(
       end
 
       if ((cycle_i != done_cycle_q) && !rom_pending_q && !local_pending_q &&
-          !host_pending_q && !adsp_pending_q) begin
+          !host_pending_q && !adsp_pending_q && !dsk_pending_q) begin
         // Preserve the CPU-visible address of every real external cycle.
         // These taps are also useful after an open-bus access, where the
         // normal read data alone cannot identify a missing board decode.
@@ -627,9 +674,9 @@ module harddrivin_main_bus #(
           rdata_o      <= 16'hffff;
           done_cycle_q <= cycle_i;
         end else if ((busstate_i == BUS_FETCH || busstate_i == BUS_READ) &&
-                     rom_select) begin
-          rom_addr_o         <= addr_i[19:1];
-          pending_rom_addr_q <= addr_i[19:1];
+                     (rom_select || dsk_rom_select)) begin
+          rom_addr_o         <= rom_word_addr;
+          pending_rom_addr_q <= rom_word_addr;
           pending_cycle_q    <= cycle_i;
           rom_req_o          <= !rom_req_o;
           rom_pending_q      <= 1'b1;
@@ -668,6 +715,15 @@ module harddrivin_main_bus #(
             adsp_we_o       <= 1'b0;
             adsp_addr_o     <= addr_i[17:1];
             adsp_wdata_o    <= wdata_i;
+          end else if (dsk_select) begin
+            pending_cycle_q <= cycle_i;
+            dsk_pending_q   <= 1'b1;
+            dsk_write_q     <= 1'b0;
+            dsk_req_o       <= 1'b1;
+            dsk_we_o        <= 1'b0;
+            dsk_addr_o      <= addr_i[23:1];
+            dsk_be_o        <= {!nuds_i, !nlds_i};
+            dsk_wdata_o     <= wdata_i;
           end else if (compact_wheel_select) begin
             rdata_o      <= {wheel_sample_next[7:0], 8'hff};
             read_count_o <= read_count_o + 32'd1;
@@ -744,6 +800,15 @@ module harddrivin_main_bus #(
               gsp_host_be_o    <= {!nuds_i, !nlds_i};
               gsp_host_wdata_o <= wdata_i;
             end
+          end else if (dsk_select) begin
+            pending_cycle_q <= cycle_i;
+            dsk_pending_q   <= 1'b1;
+            dsk_write_q     <= 1'b1;
+            dsk_req_o       <= 1'b1;
+            dsk_we_o        <= 1'b1;
+            dsk_addr_o      <= addr_i[23:1];
+            dsk_be_o        <= {!nuds_i, !nlds_i};
+            dsk_wdata_o     <= wdata_i;
           end else begin
             if (nbus_latch_select)
               control_latch_q[addr_i[3:1]] <= addr_i[4];

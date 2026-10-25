@@ -19,6 +19,8 @@ Quartus, so milestones M1-M3 can be verified on the Mac.
 | `tools/romimage.py` | builds `ddr.bin`, `index1.bin`, `zram_hi/lo.hex`, `dips.bin` from a MAME zip using the MRA layout in `tools/mkmra.py` |
 | `tools/sim.py` | `roms` / `build` / `run` front end |
 | `tools/tracediff.py` | compares the sim's 68010 write sequence with MAME's (`mame/oracle.lua`, `RD_BUSWRITES=1`) |
+| `sim/tb_asic65.sv` | replays a MAME `.asic65.log` through the ASIC65 model and checks every result (`tools/sim.py asic65-test`) |
+| `tools/asic65_sintab.py` | generates and self-checks the ASIC65 SIN/COS table `rtl/asic65/asic65_sin.hex` |
 
 Everything generated lives under `sim/build/` (gitignored). ROM images never
 enter the repository.
@@ -48,6 +50,7 @@ python3 tools/sim.py roms racedriv-cockpit ~/roms/racedriv.zip          # or --s
 python3 tools/sim.py tg68k                                              # once per TG68K change
 python3 tools/sim.py build                                              # or --stub-68010
 python3 tools/sim.py run --ms 50 --trace sim/build/run/trace.txt        # --service for the test menu
+python3 tools/sim.py asic65-test run1.asic65.log                        # ASIC65 model vs a MAME log
 ```
 
 The run prints one progress line per emulated millisecond and simulates
@@ -84,6 +87,16 @@ a second in), so the tables are globals; querying `machine.time` from inside
 a write tap also crashed, so write lines carry the last frame boundary's
 time; logs are flushed every frame because `-seconds_to_run` can end the run
 without the stop notifier.
+
+## How far the comparison goes
+
+With the stock cockpit set the write sequence matches MAME from reset to
+the first read through the slapstic window (930,458 writes, MAME 1.585 s):
+the DSK board's RAM, zero-power RAM, track ROM window, control latch and
+ASIC65 are all in the comparison. The core has no slapstic (the cabinets
+run slapstic-free ROMs), so from there MAME's bank 1 and the core's flat
+ROM differ; the DSP32C upload starts 15 ms later. NOTES.md sections 8 and 9
+have the details.
 
 ## Gotchas found so far
 

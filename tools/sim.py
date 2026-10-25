@@ -114,7 +114,8 @@ def cmd_build(args):
     cmd = ["verilator", "--binary", "--timing", "-j", str(args.jobs), "--Mdir", str(OBJ),
            "--top-module", "tb_core", "-Wno-fatal", "--no-assert-case",
            "-Irtl", "-Irtl/ika32010", "-Irtl/tms34010",
-           f"-DZRAM_HI_FILE=\"{hi}\"", f"-DZRAM_LO_FILE=\"{lo}\""]
+           f"-DZRAM_HI_FILE=\"{hi}\"", f"-DZRAM_LO_FILE=\"{lo}\"",
+           f"-DASIC65_SIN_FILE=\"{ROOT / 'rtl' / 'asic65' / 'asic65_sin.hex'}\""]
     cmd += [f"-Wno-{w}" for w in WARN_OFF]
     cmd += [f"-D{d}" for d in DEFINES]
     if args.trace_waves:
@@ -174,6 +175,33 @@ def cmd_roms(args):
     print(f"{current} -> {out.name}")
 
 
+def cmd_asic65_test(args):
+    """Replay a MAME .asic65.log through asic65_sim and check every result."""
+    out = BUILD / "asic65"
+    out.mkdir(parents=True, exist_ok=True)
+    stim = out / "asic65_stim.txt"
+    lines = ["R 1", "R 1", "R 0"]   # control latch fn 4: 0 at power-up, 0 then 1 at 1.434 s
+    counts = {"cmd": 0, "param": 0, "result": 0}
+    for line in Path(args.log).read_text().splitlines():
+        f = line.split()
+        if line.startswith("#") or len(f) < 4:
+            continue
+        kind, val = f[2], f[3]
+        code = {"cmd": "C", "param": "P", "result": "X"}.get(kind)
+        if code:
+            lines.append(f"{code} {val}")
+            counts[kind] += 1
+    stim.write_text("\n".join(lines) + "\n")
+    print(f"stimulus: {counts}")
+    sin = ROOT / "rtl" / "asic65" / "asic65_sin.hex"
+    cmd = ["verilator", "--binary", "--timing", "-Wno-fatal", "--Mdir", str(out / "obj"),
+           "--top-module", "tb_asic65", f"-DSIN_FILE=\"{sin}\"",
+           str(ROOT / "rtl" / "asic65" / "asic65_sim.sv"), str(ROOT / "sim" / "tb_asic65.sv")]
+    (out / "build.log").write_text(subprocess.run(cmd, cwd=ROOT, text=True, stdout=subprocess.PIPE,
+                                                  stderr=subprocess.STDOUT).stdout)
+    sys.exit(subprocess.run([str(out / "obj" / "Vtb_asic65"), f"+stim={stim}"], cwd=out).returncode)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -202,6 +230,9 @@ def main():
     t = sub.add_parser("tg68k")
     t.add_argument("--ghdl")
     t.set_defaults(func=cmd_tg68k)
+    a = sub.add_parser("asic65-test", help="replay a MAME .asic65.log through the ASIC65 model")
+    a.add_argument("log")
+    a.set_defaults(func=cmd_asic65_test)
     args = ap.parse_args()
     args.func(args)
 

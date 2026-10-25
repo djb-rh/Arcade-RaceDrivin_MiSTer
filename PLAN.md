@@ -413,6 +413,16 @@ DSK RAM, ZRAM, ROM window, control latch, IRQ 4 plumbing, ASIC65 simulation,
 full 68681 (two channels, baud generators, IRQ 6). Done when the self-test ROM
 checksums for DSK and ASIC65 pass, the ASIC65 command/result stream matches a
 MAME log, and the boot sequence reaches the DSP32C upload.
+- Progress 2026-10-25: DSK RAM, zero-power RAM, track ROM window, control
+  latch and the ASIC65 simulation are in the core (`rtl/dsk/`,
+  `rtl/asic65/`). The stock cockpit set's write sequence now matches MAME
+  for 930,458 writes, up to the point where the program reads through the
+  slapstic (MAME bank 1, core flat ROM) at MAME 1.585 s, 15 ms before the
+  DSP32C upload. The ASIC65 model reproduces all 151 results in a 20 s MAME
+  log (`tools/sim.py asic65-test`). Still to do for M2: IRQ 4 plumbing, the
+  full 68681, DSK zero-power RAM save, self-test checksums; and to see the
+  DSP32C upload in the comparison, either the slapstic-free set on both
+  sides or an HDL 137412 (NOTES.md section 9).
 
 **M3 — DSP32C core.**
 Standalone core in Verilator, lock-step against MAME instruction traces of the

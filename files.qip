@@ -113,6 +113,8 @@ foreach f {
   rtl/harddrivin_gsp_memory.sv
   rtl/harddrivin_compact_scanout.sv
   rtl/harddrivin_msp_memory.sv
+  rtl/asic65/asic65_sim.sv
+  rtl/dsk/harddrivin_dsk_board.sv
   rtl/harddrivin_main_bus.sv
   rtl/harddrivin_sound_board.sv
   rtl/adsp2100_budget_model.sv
