@@ -826,7 +826,10 @@ by lock-step against MAME instruction traces (`mame/dsp32-measure.patch`
   writes appear at a different point in the stream, after which both
   continue identically. `tracediff.py --resync N` skips such inserted
   blocks on either side (reporting each) and the comparison then runs on,
-  with one resync every 4 ms, which is the 244 Hz interrupt. The sim is
+  with one resync every 4 ms, which is the 244 Hz interrupt: the normal run
+  then agrees to write 1,336,423 (sim 2.80 s, MAME 3.60 s, 627 resyncs),
+  where interrupts nest differently on the two sides, and the self-test run
+  through 38,274 writes of the menu (200 ms, 211 resyncs). The sim is
   also ahead of MAME by a growing margin (1.77 s against 1.97 s at that
   point, 3.76 s against 5.24 s at the self-test sample): the 68010 runs
   about 10% fast and the boot's timed waits run short. Cycle-faithful 68010
