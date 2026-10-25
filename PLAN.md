@@ -244,9 +244,14 @@ ROMs.
 - USB HID gives 8-bit axes and buttons in, and only rumble out. There is
   no game-driven constant-force path to a USB wheel, so force feedback
   cannot be done with a USB wheel in stock Main.
-- Serial: the core's `UART_*` pins reach the ARM's `/dev/ttyS1` (bridgeable
-  by Main to USB serial, TCP or UDP), and the core can also drive raw async
-  serial on the user port (ao486 puts COM2 there).
+- Serial and network: the DE10-Nano has gigabit Ethernet and MiSTer supports
+  USB Wi-Fi dongles, but both belong to the ARM (HPS), not the FPGA. The
+  core reaches them only through its `UART_*` pins, which go to the ARM's
+  `/dev/ttyS1`; Main's `uartmode` can redirect that one channel to a USB
+  serial adapter or to TCP/UDP through MidiLink (a MIDI/modem-oriented
+  bridge). One channel, and a custom ARM daemon would depart from stock
+  Main. The core can also drive raw async serial on the user port (ao486
+  puts COM2 there).
 
 ### 3.2 Chosen architecture
 
@@ -272,18 +277,33 @@ Inputs by cabinet type, as the original boards see them:
 So the MCU needs at least eight 12-bit ADC channels, three quadrature
 inputs, about ten switch inputs and five outputs plus the motor drive.
 
+The MCU is an **ESP32-S3**, so the cabinet board is also the serial and
+Wi-Fi bridge the user was already planning to build. Both 68681 channels are
+tunnelled inside the user-port frame protocol; the ESP32 presents each one as
+a physical RS-232 port (MAX3232, original J2/J3 pinout, for stock link cables
+and existing tools) and as a Wi-Fi stream. Serial B (the side-pod data
+stream enabled by the user's patch) goes out as UDP, the format `podlink.py
+--udp` and the renderer already consume. Serial A (the link) becomes a
+point-to-point tunnel between two cabinets' ESP32s, or a cable.
+
 Pin budget on the 7 user-port lines (proposal):
 
 | Line | Use |
 |---|---|
-| USER_IO[0], [1] | Full-duplex UART to the MCU at 1-2 Mbaud: input frames (switches, pedal ADC values, wheel count or raw edges, link-present) at 1 kHz; output frames (force byte, lamps, coin-counter pulses, DSK LED) |
-| USER_IO[2], [3], [4] | Compact: wheel quadrature A, B and index straight into the FPGA, so the core's 0x400000 counter is a real hardware counter like the original. Cockpit: unused (the wheel pot arrives in the MCU frames) |
-| USER_IO[5], [6] | Serial A (link, J2) TX and RX as raw TTL, through a MAX3232 on the cabinet board, so link latency is identical to the original DUART |
+| USER_IO[0], [1] | Full-duplex UART to the ESP32 at 1-2 Mbaud: input frames (switches, ADC values, link-present, Serial A/B received bytes) at 1 kHz; output frames (force byte, lamps, coin-counter pulses, DSK LED, Serial A/B transmitted bytes). Two 38400-baud channels add under 8 kB/s each way, well inside the budget |
+| USER_IO[2], [3], [4] | Compact: wheel quadrature A, B and index straight into the FPGA, so the core's 0x400000 counter is a real hardware counter like the original. Cockpit: unused (the wheel pot arrives in the frames) |
+| USER_IO[5], [6] | Reserved. Fallback: Serial A TX/RX as raw TTL to a MAX3232 if link play turns out to need cable-level latency |
 
-Serial B (J3, the side-pod stream, transmit-only in the user's patch) is
-carried inside the MCU protocol frames and re-emitted by an MCU UART through
-a second MAX3232. If link play over the MCU proves fine, Serial A can move
-into the frames too and free two lines.
+Link latency must be measured before the board is laid out: the original is
+a direct cable with byte latency of about 260 microseconds, Wi-Fi adds
+milliseconds of jitter. The user's two-instance MAME link setup with the pty
+bridge can have an artificial delay inserted to find the protocol's
+tolerance; that result decides whether Serial A stays in the frames, goes
+over Wi-Fi, or takes the reserved raw lines.
+
+ADC note: the ESP32-S3's internal ADC is noisy and non-linear, so the pots
+(especially the cockpit's 12-bit wheel pot) should go through an external
+SPI or I2C 12-bit ADC on the board rather than the internal one.
 
 Cabinet-board functions:
 
@@ -308,16 +328,20 @@ Cabinet-board functions:
   supply. Start with F1 on a cockpit, F2 as the fallback and for any
   cabinet with a dead amp.
 - **RS-232**: two MAX3232 channels for J2 and J3 with the original pinout
-  (TX pin 7, RX pin 6, GND 4/5), plus the "link present" sense on pin 11.
-- **Wi-Fi link bridge**: if the MCU is an ESP32-S3, the Serial A stream can
-  additionally be mirrored over UDP/TCP for linked play between cabinets,
-  folding the user's ESP32 bridge idea into the same board. Latency and
-  jitter tolerance of the link protocol is unknown and must be measured.
+  (TX pin 7, RX pin 6, GND 4/5), plus the "link present" sense on pin 11,
+  fed from the tunnelled 68681 channels.
+- **Wi-Fi**: Serial B broadcast as UDP pod packets; Serial A tunnelled
+  between two cabinets for linked play, subject to the latency measurement
+  above. The ESP32 also gives a convenient path for firmware updates and a
+  status page.
 - Power: 3.3 V logic from the user port's 5 V pin or the cabinet's +5 V;
   level shifting is unnecessary at 3.3 V open-drain with pull-ups.
 
 Alternatives considered:
 
+- MiSTer's own network for the link: the core's single ARM-side UART
+  redirected to TCP/UDP by Main. One channel only and non-stock bridging;
+  kept as a fallback for a single serial port, not the design.
 - Digital I/O board plus a parallel GPIO_1 cabinet board without an MCU:
   cleaner electrically, but loses analog video and audio, which the cabinet
   needs. Rejected unless the monitor is replaced.
@@ -397,10 +421,13 @@ driven; frame hashes compared with MAME on an attract-mode replay. First
 release candidate: `RaceDrivin_cockpit.rbf` plus MRA.
 
 **M5 — Serial.**
-Link play between the core and a MAME instance (and then two cores) over a
-USB-serial adapter or the user-port UART; the side-pod stream on Serial B
-decoded by the user's `podlink.py`. Done when LINKED GAME 1/2 completes a race
-against MAME and pod packets parse.
+Full 68681 model with both channels exposed to the frame protocol and, for
+bench use before the board exists, to the user-port lines through a cheap
+TTL-to-RS-232 adapter. Link play between the core and a MAME instance, then
+two cores; the side-pod stream on Serial B decoded by the user's
+`podlink.py`. Includes the link-latency tolerance measurement in MAME. Done
+when LINKED GAME 1/2 completes a race against MAME, pod packets parse, and
+the latency budget for the ESP32 tunnel is known.
 
 **M6 — Compact port.**
 Switch the build to the MultiSync main board: compact decode (IN0 at
@@ -473,7 +500,7 @@ releases/   RBF + MRA
 | GSP protection counter or 2bpp expander path misbehaves on the compact | Investigate in MAME before M6; frame-hash comparison |
 | Quartus on Apple Silicon too slow or unstable | x86 Linux box / CI runner |
 | Compact motor amp interface unknown | Measure on the cabinet before board layout; F2 fallback |
-| Link protocol intolerant of MCU/Wi-Fi latency | Keep Serial A on raw user-port lines; measure before moving it |
+| Link protocol intolerant of MCU/Wi-Fi latency | Measure in MAME with an artificially delayed pty bridge at M5; two user-port lines are reserved for raw Serial A if needed |
 
 ## 8. Open decisions for the user
 
@@ -484,8 +511,8 @@ releases/   RBF + MRA
 3. **I/O architecture**: analog I/O board plus a user-port MCU board
    (recommended), or Digital I/O board plus a parallel GPIO_1 board with an
    external video solution?
-4. **MCU**: ESP32-S3 (folds in the Wi-Fi link bridge) or RP2040/STM32
-   (simpler, no radio)?
+4. **MCU**: decided 2026-10-24: ESP32-S3, carrying both serial channels and
+   the Wi-Fi link/pod bridge (section 3.2).
 5. **Force feedback**: drive the cabinet's original motor amp (is it present
    and working? can we trace its interface?) or a modern H-bridge?
 6. **Monitors**: the cabinets keep their monitors, fed natively from the
