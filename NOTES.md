@@ -816,9 +816,17 @@ by lock-step against MAME instruction traces (`mame/dsp32-measure.patch`
   at the same write, `fffeb8 6f4e` against `6f7a`, followed by the same DSK
   RAM and stack writes) at sim 3.760 s. From the two entry points the
   write streams agree, interrupt phase aside, through the menu's first
-  screen. Running the ROM-checksum items (DSK, ASIC65) needs menu
-  navigation with the cabinet inputs, which is M4's scripted-input work;
-  nothing in the menu itself issued ASIC65 commands.
+  screen. The test needs no navigation ("HOLD KEY TO BYPASS SELFTEST"):
+  MAME's screenshots (`mach.video:snapshot()` works with `-video none`)
+  show PROGRAM ROM OK at 12 s, PROGRAM RAM OK by 30 s, a white screen at
+  38-50 s, **BAD GSP VRAM** (MAME's own GSP fails it) and GSP COLOR RAM OK
+  by 70 s, then "DSK BOARD - 2 MINS XROM XRAM" from 90 s, "DSK BOARD OK
+  XROM XRAM ASIC.61 ASIC.65" at about 150 s, then "ADSP TEST: 3 MINS". At
+  5.5 ms of machine time per wall second the DSK items are seven hours of
+  simulation, so the checksum run waits for hardware (or a long run on the
+  Linux box); each block under that test is verified against MAME on its
+  own instead (ROM window from the same DDR image, ASIC65 and DSP32C
+  lock-step, DSK RAM in the write comparison).
 - **Interrupt phase is now the limit of the 68010 comparison.** With the
   ADC model in place the normal run matches to write 1,069,120 (MAME
   1.968 s), where MAME's periodic level-5 interrupt lands on a different
@@ -869,3 +877,9 @@ by lock-step against MAME instruction traces (`mame/dsp32-measure.patch`
   counters, 0xB00000 writes latch the force byte in the upper data byte
   (`hd68k_wr2_write`); both are now `harddrivin_main_bus` outputs. The
   lamps are the control latch's LC1/LC2 bits, the DSK LED latch function 7.
+- **Zero RAM from the MRA.** The Quartus top no longer bakes the
+  200E/210E images in from `generated/` hex files: MRA download index 3
+  (both layouts now carry it) goes through the NVRAM bridge into the main
+  board's zero RAM before any .nvm, so no ROM data enters the bitstream and
+  a saved calibration still wins. The DSK zero RAM powers up as 0xff unless
+  a .nvm has it.

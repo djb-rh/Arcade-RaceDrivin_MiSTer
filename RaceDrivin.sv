@@ -571,8 +571,10 @@ module emu (
   harddrivin_milestone #(
     .COCKPIT(COCKPIT),
     .DIAG_FULL(1'b0),   // verification builds keep the GSP boot, runtime and DI-latency pages
-    .ZERO_RAM_INIT_HI_FILE(COCKPIT ? "generated/zram_cockpit_200e.hex" : "generated/zram_200e.hex"),
-    .ZERO_RAM_INIT_LO_FILE(COCKPIT ? "generated/zram_cockpit_210e.hex" : "generated/zram_210e.hex")
+    // The 200E/210E power-up contents arrive from the MRA (download index 3)
+    // through the NVRAM bridge, then the .nvm save file if there is one; no
+    // ROM data is baked into the bitstream.
+    .ZERO_RAM_INIT_HI_FILE(""), .ZERO_RAM_INIT_LO_FILE("")
   ) u_milestone (
     .clk_50_i(CLK_50M), .rst_i(reset), .clk_core_o(clk_core), .ce_pix_o(ce_pix),
     .hblank_o(hblank), .vblank_o(vblank), .hsync_o(hsync),

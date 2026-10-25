@@ -48,7 +48,7 @@ BUTTONS = ('  <buttons default="A,B,X,Y,L,R,Start,Select" '
 #   0x150000 sound sample ROMs (up to 0x50000; Hard Drivin' uses 4, Race Drivin' 5)
 #   0x1A0000 DSK track ROM (Race Drivin' only; 0x40000 reserved, stock sets use 0x20000)
 # Index 1 is the sound 68000 program ROM (BRAM), index 2 is the 8 KiB NVRAM
-# save file (main-board zero RAM, then the DSK board's), index 3 (Race Drivin' only) is the 200E/210E power-up ZRAM image
+# save file (main-board zero RAM, then the DSK board's), index 3 is the 200E/210E power-up ZRAM image
 # interleaved as the 68010 sees it (200E = high byte, 210E = low byte).
 LAYOUTS = {
     "harddriv-cockpit": {
@@ -59,6 +59,7 @@ LAYOUTS = {
                              ("mainpcb:user1", 0x100000, 0x50000),
                              ("mainpcb:harddriv_sound:serialroms", 0x150000, None)]),
             (1, None, [("mainpcb:harddriv_sound:soundcpu", 0, None)]),
+            (3, None, [("mainpcb:200e+mainpcb:210e", 0, None)]),
         ],
         "nvram": (2, 8192),
         "remark": ("Uses stock MiSTer Main. Default gamepad controls: left-stick steering, right-stick up for "

@@ -25,6 +25,9 @@ module tb_core;
 `ifndef ASIC65_SIN_FILE
   `define ASIC65_SIN_FILE "rtl/asic65/asic65_sin.hex"
 `endif
+`ifndef MAIN_CPU_DIV
+  `define MAIN_CPU_DIV 16
+`endif
 `ifndef DSK_ZRAM_HI_FILE
   `define DSK_ZRAM_HI_FILE ""
 `endif
@@ -76,6 +79,7 @@ module tb_core;
   harddrivin_milestone #(
     .COCKPIT(COCKPIT),
     .MSP(1'b0),          // Race Drivin' has no MSP
+    .MAIN_CPU_DIV(`MAIN_CPU_DIV),
     .DIAG_FULL(1'b0),
     .ZERO_RAM_INIT_HI_FILE(`ZRAM_HI_FILE),
     .ZERO_RAM_INIT_LO_FILE(`ZRAM_LO_FILE),

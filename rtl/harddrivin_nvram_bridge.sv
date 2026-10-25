@@ -84,8 +84,12 @@ module harddrivin_nvram_bridge #(
           fetched_valid_q <= 1'b1;
         end
       end
-    end else if (ioctl_download_i && (ioctl_index_i == 16'd2) &&
-                     ioctl_wr_i) begin
+    end else if (ioctl_download_i && ioctl_wr_i &&
+                 (ioctl_index_i == 16'd2 ||
+                  (ioctl_index_i == 16'd3 && !ioctl_addr_i[12]))) begin
+      // index 2: the .nvm save file (both boards' zero RAMs); index 3: the
+      // MRA's 200E/210E power-up image for the main board, loaded before
+      // any .nvm so a saved calibration still wins
       we_q <= 1'b1;
       addr_q <= ioctl_addr_i;
       wdata_q <= ioctl_dout_i;

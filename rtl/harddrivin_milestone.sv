@@ -130,6 +130,8 @@ module harddrivin_milestone #(
   // 1: the MSP (second TMS34010) is present (Hard Drivin').  0: Race Drivin'
   //    boards have none; its host registers read 0xFFFF and writes are dropped.
   parameter bit MSP = 1,
+  // 68010 clock enable: one TG68K step every MAIN_CPU_DIV clocks of 48 MHz (pacing, NOTES.md 8/9)
+  parameter int MAIN_CPU_DIV = 16,
   parameter        ZERO_RAM_INIT_HI_FILE = "",
   parameter        ZERO_RAM_INIT_LO_FILE = "",
   // ASIC65 sine table (tools/asic65_sintab.py), relative to the project.
@@ -1975,7 +1977,7 @@ module harddrivin_milestone #(
   logic        main_periodic_irq_q;
   logic [31:0] main_irq_count_q;
   logic [2:0]  main_ipl_n;
-  logic [3:0] cpu_div;
+  logic [5:0] cpu_div;
 
   // Export the ROM-observed startup calibration windows separately.  This is
   // development instrumentation: it lets the MiSTer top exercise the same
@@ -2036,10 +2038,10 @@ module harddrivin_milestone #(
   // MAME's within ~5 %.  The periodic 244 Hz tick, MSP/GSP/ADSP are
   // independent of this divider.
   always_ff @(posedge clk_gsp) begin
-    if (rst_gsp) cpu_div <= 4'd0;
-    else cpu_div <= (cpu_div == 4'd15) ? 4'd0 : cpu_div + 4'd1;
+    if (rst_gsp) cpu_div <= 6'd0;
+    else cpu_div <= (cpu_div == 6'(MAIN_CPU_DIV - 1)) ? 6'd0 : cpu_div + 6'd1;
   end
-  wire main_cpu_ce = (cpu_div == 4'd0) && main_bus_ready;
+  wire main_cpu_ce = (cpu_div == 6'd0) && main_bus_ready;
 
   // TG68K's kernel exposes skipFetch for cycles which exist internally but
   // must not reach the external bus.  Its standard asynchronous-bus wrapper
