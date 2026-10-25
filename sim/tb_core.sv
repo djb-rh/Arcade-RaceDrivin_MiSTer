@@ -61,6 +61,7 @@ module tb_core;
 
   harddrivin_milestone #(
     .COCKPIT(COCKPIT),
+    .MSP(1'b0),          // Race Drivin' has no MSP
     .DIAG_FULL(1'b0),
     .ZERO_RAM_INIT_HI_FILE(`ZRAM_HI_FILE),
     .ZERO_RAM_INIT_LO_FILE(`ZRAM_LO_FILE)

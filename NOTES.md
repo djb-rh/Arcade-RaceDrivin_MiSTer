@@ -568,3 +568,46 @@ Full reports in `docs/measurements/`. Both sets give the same profile.
 - So the PIO model needs: PAR/PARE address registers with DMA autoincrement,
   PDR data register, PCR, PIR and EMR, in the register mode the game selects
   via PCR bits 1 and 9. No serial I/O.
+
+## 8. Whole-core simulation findings (2026-10-25)
+
+Cockpit set `racedriv` (stock, slapstic present) in the Verilator harness
+with the GHDL-converted TG68K, compared write-for-write with MAME
+(`mame/oracle.lua`, `RD_BUSWRITES=1`, `tools/tracediff.py`).
+
+- **The Race Drivin' program writes the GSP host port while /GSPRES is still
+  asserted.** The power-up DSK probe (0xD60-0xE52) reads 0x920000,
+  0x920040/44/48/4C and compares seven words at 0x920002 with a table at
+  0xD1A; nothing answers there in MAME either (open bus), so the compare
+  fails, a BCD digit at 0xFF4FED is bumped and the code writes the result
+  through HSTADR/HSTDATA (`c00002 00ff / c00004 9010 / c0000c 1234`) before
+  releasing the GSP at 0x60401C. The imported core held the whole GSP,
+  including its host interface, in a level reset and never acknowledged the
+  cycle: the 68010 hung at its 27th write, 90 us after reset. MAME resets the
+  chip at assertion, suspends the CPU while the line is held and keeps
+  `host_w` live. The core now does the same: a 64-clock chip reset pulse at
+  /GSPRES assertion (and power-up) and the held level routed into the
+  processor's HLT path (`reset_hold_i` on tms34010_core/system/probe).
+- **Race Drivin' has no MSP** (MAME `driver_nomsp`). At 0.39 s (sim) the
+  program read-modify-writes the MSP's HSTCTL at 0xC04008: MAME reads
+  0xFFFF and writes 0xFFFF back; the HD core answered from its MSP. New
+  `MSP` parameter on `harddrivin_milestone` (default 1); with 0 the MSP, its
+  memory, host CDC and release sync are not generated, host reads return
+  0xFFFF and writes vanish. This also frees the MSP's block RAM and logic for
+  the DSK board.
+- **Write order inside a long**: TG68K writes the high word first, MAME's
+  68000 core the low word first (MOVEM -(SP), PEA). Same memory image;
+  `tracediff.py` tolerates and counts the swaps.
+- **Result so far**: 700 ms of simulation = 435,749 writes, all identical to
+  MAME's sequence (MAME reaches the same write at 0.817 s); 11 long-write
+  half swaps. No divergence found yet.
+- **68010 pacing**: with the imported 1-in-16 clock enable the GSP download
+  loop (`move.w (A0)+,$C0000C; dbra`) runs 1.32x faster than MAME's 8 MHz
+  68010 (231,958 writes at 0.391 s vs 0.517 s). The HD author tuned the
+  divider for the Hard Drivin' boot timeline; revisit once the whole boot is
+  visible (the game's bounded GSP waits scale with it).
+- Reset vector of the cockpit set: SSP 0xFFFFC000, PC 0x21C, matching the
+  HD core's boot check.
+- MAME 0.289 Lua: `emu.register_stop` is gone; taps/logs must be reachable
+  from globals or they are collected and the next tapped write segfaults
+  MAME; `machine.time` inside a tap also crashed. See docs/simulation.md.

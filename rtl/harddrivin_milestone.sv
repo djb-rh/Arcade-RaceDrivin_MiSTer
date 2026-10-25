@@ -11,6 +11,7 @@ module tms34010_probe #(
   input  logic        vclk_i,
   input  logic        rst_i,
   input  logic        vclk_rst_i,
+  input  logic        reset_hold_i,
   input  logic        hsync_i,
   input  logic        vsync_i,
   input  logic        host_req_i,
@@ -74,6 +75,7 @@ module tms34010_probe #(
     // HCS is inactive during reset on the board.  The 34010 samples that
     // level into HSTCTL.HLT and the 68010 then releases it through HSTCTL.
     .hcs_n_i(1'b1),
+    .reset_hold_i(reset_hold_i),
     .host_req_i(host_req_i),
     .host_we_i(host_we_i),
     .host_reg_i(host_reg),
@@ -125,6 +127,9 @@ endmodule
 
 module harddrivin_milestone #(
   parameter bit COCKPIT = 0,
+  // 1: the MSP (second TMS34010) is present (Hard Drivin').  0: Race Drivin'
+  //    boards have none; its host registers read 0xFFFF and writes are dropped.
+  parameter bit MSP = 1,
   parameter        ZERO_RAM_INIT_HI_FILE = "",
   parameter        ZERO_RAM_INIT_LO_FILE = "",
   // 1: every diagnostic page is captured; 0: only pages 50-54 (GSP boot),
@@ -539,13 +544,43 @@ module harddrivin_milestone #(
     !coin1_i, !coin2_i, !service_i, 2'b11,
     !vblank_o, !hblank_o, diag_jumper_i
   };
-  assign tms_gsp_rst = rst_gsp || !gsp_reset_release;
+  // /GSPRES from the control latch is the GSP's RESET pin.  The chip is
+  // reset when the line is asserted and the processor cannot run while it
+  // is held, but the host interface stays reachable: Race Drivin' writes
+  // HSTADR and HSTDATA (the DSK self-test result) before releasing the
+  // line, and MAME keeps host accesses live while the CPU is suspended.
+  // So the chip-wide reset is a pulse at assertion (and at power-up) and
+  // the held level goes to the processor's HLT path instead.
+  logic       gsp_reset_release_q;
+  logic [5:0] gsp_res_pulse_q;
+  logic [1:0] gsp_res_pulse_vclk_q;
+  always_ff @(posedge clk_gsp) begin
+    if (rst_gsp) begin
+      gsp_reset_release_q <= 1'b0;
+      gsp_res_pulse_q     <= 6'd0;
+    end else begin
+      gsp_reset_release_q <= gsp_reset_release;
+      if (gsp_reset_release_q && !gsp_reset_release) gsp_res_pulse_q <= 6'd63;
+      else if (gsp_res_pulse_q != 6'd0) gsp_res_pulse_q <= gsp_res_pulse_q - 6'd1;
+    end
+  end
+  assign tms_gsp_rst = rst_gsp || (gsp_res_pulse_q != 6'd0);
+  wire gsp_reset_hold = !gsp_reset_release;
+  // the same pulse for the GSP's video clock domain (64 core clocks is
+  // several VCLK periods, so the two-flop synchroniser cannot miss it)
+  always_ff @(posedge clk_video)
+    gsp_res_pulse_vclk_q <= {gsp_res_pulse_vclk_q[0], gsp_res_pulse_q != 6'd0};
 
+  generate if (MSP) begin : g_msp_release
   tms34010_sync_bit #(.RESET_VALUE(1'b0)) u_msp_release_sync (
     .clk(clk_msp), .rst(rst_msp), .async_i(msp_reset_release),
     .sync_o(msp_reset_release_sync)
   );
   assign tms_msp_rst = rst_msp || !msp_reset_release_sync;
+  end else begin : g_msp_release_absent
+    assign msp_reset_release_sync = 1'b0;
+    assign tms_msp_rst = 1'b1;
+  end endgenerate
   assign gsp_screen_cycle = gsp_cycle_req &&
       (gsp_cycle_kind == tms34010_pkg::LOCAL_CYCLE_SCREEN_REFRESH);
   assign gsp_memory_cycle_req = gsp_cycle_req && !gsp_screen_cycle;
@@ -565,6 +600,7 @@ module harddrivin_milestone #(
   // traffic is in flight.  A reset of the MSP core+host_if mid-download simply
   // stalls a crossing command (main bus holds its request) until the host_if
   // returns; nothing is lost.
+  generate if (MSP) begin : g_msp_host_cdc
   harddrivin_host_cdc u_msp_host_cdc (
     .src_clk_i(clk_gsp),
     .src_rst_i(rst_gsp),
@@ -578,6 +614,16 @@ module harddrivin_milestone #(
     .dst_wdata_o(msp_host_wdata), .dst_rdata_i(msp_host_rdata),
     .dst_ack_i(msp_host_ack)
   );
+  end else begin : g_msp_host_cdc_absent
+    // no MSP: the 68010 reads 0xFFFF from 0xC04000 and its writes vanish (MAME)
+    assign msp_host_src_rdata = 16'hFFFF;
+    assign msp_host_src_ack   = msp_host_src_req;
+    assign msp_host_req   = 1'b0;
+    assign msp_host_we    = 1'b0;
+    assign msp_host_reg   = 2'b00;
+    assign msp_host_be    = 2'b00;
+    assign msp_host_wdata = 16'h0000;
+  end endgenerate
 
 `ifdef HD_ARCH_MILESTONE
   localparam bit HD_GSP_LINE_FILL = 1'b1;
@@ -966,6 +1012,7 @@ module harddrivin_milestone #(
   // message hold time (HSTCTLL 0x0090 -> 0x0080) is 796 us with 3, 529 us
   // with 0; MAME/real board ~790 us.  The 68010 <-> MSP result-buffer
   // protocol depends on that pacing.
+  generate if (MSP) begin : g_msp_memory
   harddrivin_msp_memory #(.WAIT_STATES(3)) u_msp_memory (
     .clk_i(clk_msp), .rst_i(tms_msp_rst),
     .cycle_req_i(msp_cycle_req), .cycle_kind_i(msp_cycle_kind),
@@ -976,6 +1023,13 @@ module harddrivin_milestone #(
     .instruction_fetch_seen_o(msp_instruction_fetch_seen),
     .roundtrip_seen_o(msp_memory_roundtrip_seen)
   );
+  end else begin : g_msp_memory_absent
+    assign msp_cycle_rdata = 16'h0000;
+    assign msp_cycle_ack = 1'b0;
+    assign msp_memory_write_count = 32'd0;
+    assign msp_instruction_fetch_seen = 1'b0;
+    assign msp_memory_roundtrip_seen = 1'b0;
+  end endgenerate
 
   assign visible_diagnostic = {
     msp_instruction_fetch_seen,
@@ -1795,7 +1849,8 @@ module harddrivin_milestone #(
   // refresh cycles on its local bus
   tms34010_probe #(.DATA_SEED(16'h3401), .FAST_BLIT(1'b1), .DRAM_REFRESH(1'b0)) u_gsp (
     .clk_i(clk_gsp), .vclk_i(clk_video), .rst_i(tms_gsp_rst),
-    .vclk_rst_i(rst_video || !gsp_reset_release),
+    .vclk_rst_i(rst_video || gsp_res_pulse_vclk_q[1]),
+    .reset_hold_i(gsp_reset_hold),
     .hsync_i(1'b0), .vsync_i(1'b0),
     .host_req_i(gsp_host_req), .host_we_i(gsp_host_we),
     .host_reg_i(gsp_host_reg), .host_be_i(gsp_host_be),
@@ -1823,8 +1878,10 @@ module harddrivin_milestone #(
   // it with VIDEO=0 saved ~150 ALMs but changed on-hardware behaviour (car
   // pulling, dashboard colours), so the MSP program is assumed to use the
   // display counters/DPYINT as a time base.
+  generate if (MSP) begin : g_msp
   tms34010_probe #(.DATA_SEED(16'h5a2c), .PIXEL_OPS(1'b0)) u_msp (
     .clk_i(clk_msp), .vclk_i(clk_msp), .rst_i(tms_msp_rst),
+    .reset_hold_i(1'b0),   // the MSP keeps its level reset
     .vclk_rst_i(tms_msp_rst), .hsync_i(1'b0), .vsync_i(1'b0),
     .host_req_i(msp_host_req), .host_we_i(msp_host_we),
     .host_reg_i(msp_host_reg), .host_be_i(msp_host_be),
@@ -1846,6 +1903,33 @@ module harddrivin_milestone #(
     .cycle_dram_row_o(msp_cycle_dram_row),
     .cycle_rdata_i(msp_cycle_rdata), .cycle_ack_i(msp_cycle_ack)
   );
+  end else begin : g_msp_absent
+    assign msp_host_rdata = 16'hFFFF;
+    assign msp_host_ack = 1'b0;
+    assign msp_host_busy = 1'b0;
+    assign msp_hint_n = 1'b1;
+    assign msp_pc = 32'd0;
+    assign msp_state = '0;
+    assign msp_cycles = 32'd0;
+    assign msp_instr_word = 16'h0000;
+    assign msp_hstctll = 16'h0000;
+    assign msp_illegal = 1'b0;
+    assign msp_video_hsync = 1'b0;
+    assign msp_video_vsync = 1'b0;
+    assign msp_video_hblank = 1'b0;
+    assign msp_video_vblank = 1'b0;
+    assign msp_video_blank = 1'b0;
+    assign msp_cycle_req = 1'b0;
+    assign msp_cycle_kind = tms34010_pkg::local_cycle_kind_t'(0);
+    assign msp_cycle_addr = 32'd0;
+    assign msp_cycle_wdata = 16'h0000;
+    assign msp_cycle_io_rdata = 16'h0000;
+    assign msp_cycle_iaq = 1'b0;
+    assign msp_cycle_srfaddr = 14'd0;
+    assign msp_cycle_dpytap = 16'h0000;
+    assign msp_cycle_screen_org = 1'b0;
+    assign msp_cycle_dram_row = 8'd0;
+  end endgenerate
 
   // Main 68010 candidate. CPU=01 selects TG68K's 68010 behavior.
   logic [31:0] main_addr;

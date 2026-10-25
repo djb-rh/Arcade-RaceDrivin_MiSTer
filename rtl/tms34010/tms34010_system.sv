@@ -35,6 +35,7 @@ module tms34010_system
   output logic                              emua_n_o,
 
   input  logic                              hcs_n_i,
+  input  logic                              reset_hold_i,
   input  logic                              host_req_i,
   input  logic                              host_we_i,
   input  host_reg_sel_t                     host_reg_i,
@@ -136,6 +137,7 @@ module tms34010_system
     .run_emu_n_i             (run_emu_n_i),
     .emua_n_o                (emua_n_o),
     .hcs_n_i                 (hcs_n_i),
+    .reset_hold_i            (reset_hold_i),
     .host_req_i              (host_req_i),
     .host_we_i               (host_we_i),
     .host_reg_i              (host_reg_i),

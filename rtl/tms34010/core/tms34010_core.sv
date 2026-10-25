@@ -73,6 +73,13 @@ module tms34010_core
   // Synchronous four-register host boundary. The future pin-level wrapper
   // supplies bus timing/CDC and drives these request/ack transactions.
   input  logic                                hcs_n_i,
+  // RESET pin held by the board (Hard/Race Drivin': the 68010's /GSPRES
+  // latch).  The processor stays halted as if HSTCTL.HLT were set while the
+  // host interface and the memory path keep working, so host-register
+  // accesses made during the hold complete and land.  MAME suspends the CPU
+  // and keeps host_w live; Race Drivin' writes HSTADR/HSTDATA before
+  // releasing /GSPRES and hangs if the port does not answer.
+  input  logic                                reset_hold_i,
   input  logic                                host_req_i,
   input  logic                                host_we_i,
   input  host_reg_sel_t                       host_reg_i,
@@ -3689,7 +3696,9 @@ module tms34010_core
   logic [15:0]           io_intenb;    // INTENB register (maskable-interrupt enables)
   logic [15:0]           io_intpend;   // INTPEND register (maskable-interrupt pending)
   logic [15:0]           io_hstctlh;   // HSTCTLH register (host control; NMI/NMIM bits)
-  logic                  io_hlt;       // HSTCTLH.HLT, sampled at instruction boundaries
+  logic                  io_hlt_reg;   // HSTCTLH.HLT
+  logic                  io_hlt;       // HLT or the board's reset hold, sampled at instruction boundaries
+  assign io_hlt = io_hlt_reg || reset_hold_i;
   logic                  nmi_clear;    // pulse to clear HSTCTLH.NMI on taking the NMI
   logic                  wvp_set;      // pulse to set INTPEND.WV on a window violation
   logic [DATA_WIDTH-1:0] mem_rdata_eff;
@@ -3711,7 +3720,7 @@ module tms34010_core
     .host_ack_o(host_ack_o),
     .host_busy_o(host_busy_o),
     .hint_n_o (hint_n_o),
-    .hlt_o    (io_hlt),
+    .hlt_o    (io_hlt_reg),
     .host_mem_req_o(host_mem_req_o),
     .host_mem_we_o(host_mem_we_o),
     .host_mem_addr_o(host_mem_addr_o),
