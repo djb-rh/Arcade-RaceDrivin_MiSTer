@@ -68,3 +68,8 @@ The same patch adds `RD_DSP32TRACE=<file>` (with `RD_DSP32TRACE_FROM`,
 `RD_DSP32TRACE_COUNT`, `RD_DSP32TRACE_DAU=1`): per-instruction state deltas,
 memory writes and host PIO events for the lock-step test of the FPGA core,
 `tools/sim.py dsp32-test <file>`. Format and method: docs/dsp32c.md.
+
+`mame/play.lua` is an `-autoboot_script` that plays a game with scripted
+inputs (coin, Key, first gear, full throttle, steering weave from 17 s) so
+the DSP32C runs its real-time physics; `RD_PLAY_T0` moves the timeline and
+`RD_PLAY_ORACLE=1` loads oracle.lua as well.

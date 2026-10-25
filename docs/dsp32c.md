@@ -110,8 +110,19 @@ execution, 526,181 memory writes, 17,091 PIO reads) and 2,000,000
 instructions from instruction 10,000,000 inside the DAU-heavy
 initialisation (325,000 DAU operations, 222,840 writes) both match with
 zero differences. All of the chip's floating-point work in attract mode
-happens in that initialisation burst (4.2 s to 6 s); gameplay physics
-needs a trace with inputs injected into MAME, still to do.
+happens in that initialisation burst (4.2 s to 6 s); the real-time physics
+runs during play, so `mame/play.lua` drives a game with scripted inputs
+(coin, Key, first gear, full throttle, a steering weave) and a third window
+of 2,000,000 instructions taken 30 s into the drive (416,000 DAU
+operations, 223,557 writes) also matches with zero differences.
+
+```bash
+SDL_VIDEODRIVER=dummy RD_DSP32TRACE=$PWD/play.trace RD_DSP32TRACE_FROM=250000000 \
+  RD_DSP32TRACE_COUNT=2000000 RD_DSP32TRACE_DAU=1 ~/Developer/mame/hd racedriv -rompath ... \
+  -nvram_directory <calibrated nvram copy> -cfg_directory cfg \
+  -autoboot_script ~/Developer/rd-mister/mame/play.lua -video none -sound none -nothrottle \
+  -seconds_to_run 36 -skip_gameinfo
+```
 
 ## Speed
 

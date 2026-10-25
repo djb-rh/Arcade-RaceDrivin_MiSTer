@@ -746,9 +746,14 @@ by lock-step against MAME instruction traces (`mame/dsp32-measure.patch`
   set after the upload) and about 6 s; afterwards the chip only polls its
   mailbox (loop at 0x6054C4). So the "16,000 DAU ops per second" of section
   7 is an average dominated by that burst; the real-time physics DAU work
-  happens during play only. Gameplay traces need inputs injected into MAME
-  (coin, start, driving), which is a follow-up; the user's
-  `racedrivin-tools/mame/e2e_*.lua` scripts may already do this.
+  happens during play only. `mame/play.lua` (an `-autoboot_script`) drives
+  a game: coin at 9 s, Key to start, Key through the track and transmission
+  screens, then first gear, full throttle and a steering weave from 17 s.
+  Driving, the DSP executes about 2.08 M DAU instructions per second, a
+  fifth of its instruction stream. **Window 3, 2,000,000 instructions from
+  instruction 250,000,000 (30 s, driving; 182k form-1/4, 11k form-2, 138k
+  form-3, 85k form-5 DAU ops; 223,557 writes, 1,854 PIO reads): zero
+  differences.** That is the real-time physics path covered.
 - **Trace mechanics.** Records are emitted at the top of `execute_one`, so
   a record holds the previous instruction's effects, the host PIO accesses
   since, and the deferred DAU write processed at the start of this one;

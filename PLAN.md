@@ -439,8 +439,9 @@ reaches attract with the drone cars driving, and the physics block at
   differences (`tools/sim.py dsp32-test`, docs/dsp32c.md, NOTES.md section
   10). Integrated into the DSK board with IRQ 4; the whole-core 68010
   comparison matches MAME through the PIO test and upload for the full
-  1.75 s run. Still to do: gameplay traces (inputs in MAME), speed-up
-  towards 10 MIPS if mailbox latency shows, hardware.
+  1.75 s run. A third window taken during play (`mame/play.lua` drives the
+  game) also matches, so the real-time physics path is covered. Still to
+  do: speed-up towards 10 MIPS if mailbox latency shows, hardware.
 
 **M4 — Cockpit playable with USB controls.**
 Adapt the existing cockpit USB mapping to Race Drivin': 12-bit wheel with the
