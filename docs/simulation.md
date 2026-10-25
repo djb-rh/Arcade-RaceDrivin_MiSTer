@@ -23,31 +23,36 @@ Quartus, so milestones M1-M3 can be verified on the Mac.
 Everything generated lives under `sim/build/` (gitignored). ROM images never
 enter the repository.
 
-## The 68010 problem
+## The 68010: TG68K through GHDL
 
 The core's 68010 is TG68K, which is VHDL; Verilator reads only Verilog and
-SystemVerilog. The plan is to convert it once with GHDL's synthesiser:
+SystemVerilog. `tools/sim.py tg68k` converts it once with GHDL's synthesiser
+into `sim/build/ghdl/tg68k_synth.v` (32k lines), with the generics fixed to
+the values `harddrivin_milestone.sv` instantiates and parameters of the same
+names put back on the module header so the instantiation elaborates. It
+passes `--latches`: two ALU signals (`rot_rot`, `msb`) are incompletely
+assigned in combinational processes, which VHDL simulates as holding their
+value, so a latch is the faithful model.
 
-```bash
-ghdl -a --std=08 -fsynopsys -frelaxed rtl/tg68k/TG68K_Pack.vhd rtl/tg68k/TG68K_ALU.vhd rtl/tg68k/TG68KdotC_Kernel.vhd
-ghdl --synth --std=08 -fsynopsys -frelaxed --out=verilog -gSR_Read=0 -gVBR_Stackframe=1 -gextAddr_Mode=0 -gMUL_Mode=0 -gDIV_Mode=0 -gBitField=0 -gBarrelShifter=1 -gMUL_Hardware=1 TG68KdotC_Kernel > sim/build/ghdl/tg68k_synth.v
-```
-
-(generics fixed to the values the core instantiates). GHDL's Homebrew cask
-is disabled on macOS (fails the Gatekeeper check); the official arm64 build is
-`ghdl-llvm-6.0.0-macos15-aarch64.tar.gz` on the GHDL GitHub releases page.
-Until it is installed, `tools/sim.py build --stub-68010` compiles everything
-else so the models and the rest of the core can be exercised.
+GHDL on this Mac: Homebrew's cask is disabled (it fails Gatekeeper), so the
+official arm64 build `ghdl-llvm-6.0.0-macos15-aarch64.tar.gz` from the GHDL
+GitHub releases is unpacked under `~/Developer/tools/` (quarantine attribute
+removed with `xattr -dr com.apple.quarantine`). `tools/sim.py tg68k` looks
+there by default; `--ghdl` points elsewhere. `build --stub-68010` still
+compiles everything else with an empty 68010 for model work.
 
 ## Usage
 
 ```bash
 python3 tools/sim.py roms racedriv-cockpit ~/roms/racedriv.zip          # or --slapstic-free
+python3 tools/sim.py tg68k                                              # once per TG68K change
 python3 tools/sim.py build                                              # or --stub-68010
 python3 tools/sim.py run --ms 50 --trace sim/build/run/trace.txt        # --service for the test menu
 ```
 
-The run prints one progress line per emulated millisecond. The build is tied
+The run prints one progress line per emulated millisecond and simulates
+about 4.6 ms of machine time per wall second (`build --opt` for -O3). The
+build is tied
 to one ROM set because the core takes the 200E/210E power-up ZRAM images as
 compile-time parameters (the Hard Drivin' core bakes them into the bitstream;
 M1 moves them to a download index).
@@ -64,6 +69,20 @@ sequence of (address, data, byte enables) on both machines until it reads
 something timing-dependent (an input port, a status flag), which is exactly
 where the FPGA differs from MAME and is what the comparison is for. Fetch
 addresses in the sim trace include prefetch and are not compared directly.
+One difference is tolerated and tallied: TG68K writes the high word of a
+long first, MAME's 68000 core the low word (MOVEM, PEA); memory ends up the
+same. `--timeline N` prints both machines' emulated time every N matching
+writes, which is how the 68010 pacing is compared (the sim runs the GSP
+download loop about 1.3x faster than MAME's 8 MHz 68010).
+
+MAME-side gotchas (all fixed in `mame/oracle.lua`): `emu.register_stop` is
+gone in 0.289 (`emu.add_machine_stop_notifier`); a tap or log referenced
+only by a chunk-local is garbage-collected once the script returns and MAME
+then calls the tap with a dead function (SIGSEGV in `lua_gettop` about half
+a second in), so the tables are globals; querying `machine.time` from inside
+a write tap also crashed, so write lines carry the last frame boundary's
+time; logs are flushed every frame because `-seconds_to_run` can end the run
+without the stop notifier.
 
 ## Gotchas found so far
 

@@ -4,6 +4,7 @@
     tools/sim.py build [--stub-68010] [--trace-waves]
     tools/sim.py run --roms sim/build/roms/racedriv --ms 50 --trace sim/build/run/trace.txt [--service]
     tools/sim.py roms racedriv-cockpit ~/roms/racedriv.zip [--slapstic-free]   (wraps tools/romimage.py)
+    tools/sim.py tg68k [--ghdl /path/to/ghdl]                                (VHDL -> Verilog, once)
 
 Build: collects the core's sources from the Quartus project (via
 tools/hd/list_sources.tcl), swaps in the simulation models under sim/models/,
@@ -17,6 +18,7 @@ Run: executes the binary in the ROM directory with the chosen plusargs.
 """
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -45,6 +47,47 @@ def core_sources():
             continue
         files.append(value)
     return files
+
+
+TG68K_GENERICS = {"SR_Read": 0, "VBR_Stackframe": 1, "extAddr_Mode": 0, "MUL_Mode": 0,
+                  "DIV_Mode": 0, "BitField": 0, "BarrelShifter": 1, "MUL_Hardware": 1}
+GHDL_DEFAULT = Path.home() / "Developer/tools/ghdl-llvm-6.0.0-macos15-aarch64/bin/ghdl"
+
+
+def cmd_tg68k(args):
+    """Convert the VHDL TG68K to Verilog with GHDL's synthesiser.
+
+    The generics are fixed to the values harddrivin_milestone.sv instantiates
+    (TG68K_GENERICS); the module header is then given parameters of the same
+    names so that instantiation still elaborates (Verilator ignores the
+    overrides, which equal the baked-in values).
+    """
+    ghdl = args.ghdl or (str(GHDL_DEFAULT) if GHDL_DEFAULT.exists() else shutil.which("ghdl"))
+    if not ghdl:
+        sys.exit("ghdl not found: pass --ghdl (see docs/simulation.md)")
+    out_dir = BUILD / "ghdl"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    src = [str(ROOT / "rtl" / "tg68k" / f) for f in ("TG68K_Pack.vhd", "TG68K_ALU.vhd", "TG68KdotC_Kernel.vhd")]
+    std = ["--std=08", "-fsynopsys", "-frelaxed"]
+    env = dict(os.environ, PATH=SIM_PATH)
+    subprocess.run([ghdl, "-a"] + std + src, cwd=out_dir, env=env, check=True)
+    # --latches: two ALU signals (rot_rot, msb) are incompletely assigned in
+    # combinational processes; VHDL keeps the old value, so a latch is faithful.
+    cmd = [ghdl, "--synth"] + std + ["--latches", "--out=verilog"]
+    cmd += [f"-g{k}={v}" for k, v in TG68K_GENERICS.items()] + ["TG68KdotC_Kernel"]
+    res = subprocess.run(cmd, cwd=out_dir, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    (out_dir / "synth.log").write_text(res.stderr)
+    if res.returncode != 0:
+        print(res.stderr[-3000:])
+        sys.exit("ghdl --synth failed")
+    params = ",\n   ".join(f"parameter integer {k} = {v}" for k, v in TG68K_GENERICS.items())
+    text, n = re.subn(r"^module TG68KdotC_Kernel\n", f"module TG68KdotC_Kernel\n  #({params})\n", res.stdout,
+                      count=1, flags=re.M)
+    if n != 1:
+        sys.exit("unexpected GHDL output: module header not found")
+    out = out_dir / "tg68k_synth.v"
+    out.write_text(text)
+    print(f"wrote {out} ({text.count(chr(10))} lines); warnings in {out_dir / 'synth.log'}")
 
 
 def cmd_build(args):
@@ -150,6 +193,9 @@ def main():
     m.add_argument("--parent", action="append", default=[])
     m.add_argument("--slapstic-free", action="store_true")
     m.set_defaults(func=cmd_roms)
+    t = sub.add_parser("tg68k")
+    t.add_argument("--ghdl")
+    t.set_defaults(func=cmd_tg68k)
     args = ap.parse_args()
     args.func(args)
 

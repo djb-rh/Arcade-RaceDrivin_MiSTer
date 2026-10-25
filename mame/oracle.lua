@@ -15,7 +15,7 @@
 --   RD_PHYS=1           per-frame dump of the DSK RAM physics block and input block
 --   RD_HASH=<n>         CRC of the screen every n frames (slow in Lua; 60 is sensible)
 --   RD_TRACE68K=1       68010 instruction trace through the debugger (needs -debug)
---   RD_BUSWRITES=1      every 68010 write (address, data) outside ROM: the exact
+--   RD_BUSWRITES=1      every 68010 write "addr data mask frametime": the exact
 --                       sequence the FPGA core must reproduce (compare with
 --                       tools/tracediff.py against the sim's bus trace)
 --
@@ -30,7 +30,15 @@ local env  = os.getenv
 
 local prefix = env("RD_LOG") or "oracle"
 local frame = 0
-local logs = {}
+-- Globals on purpose: a tap or log that is only referenced by a chunk-local
+-- is collected once this chunk returns, and MAME then calls the tap with a
+-- dead Lua function (SIGSEGV in lua_gettop a fraction of a second in).
+logs = {}
+taps = {}
+-- emulated time at the last frame boundary.  The write tap uses this rather
+-- than mach.time: querying the machine from inside a memory tap crashed MAME
+-- 0.289 a few thousand writes in.
+local frame_time = 0.0
 
 local function openlog(name)
   local f = assert(io.open(prefix .. "." .. name .. ".log", "w"))
@@ -43,8 +51,6 @@ local function stamp()
   return string.format("%d %.6f ", frame, mach.time:as_double())
 end
 
--- keep tap objects alive; MAME removes a tap when its handle is collected
-local taps = {}
 
 local function wtap(first, last, name, fn)
   taps[#taps + 1] = sp:install_write_tap(first, last, name, fn)
@@ -128,7 +134,7 @@ end
 if env("RD_BUSWRITES") == "1" then
   local f = openlog("writes")
   wtap(0x000000, 0xffffff, "all_w", function(offset, data, mask)
-    f:write(string.format("%06x %04x %04x\n", offset, data & 0xffff, mask & 0xffff))
+    f:write(string.format("%06x %04x %04x %.6f\n", offset, data & 0xffff, mask & 0xffff, frame_time))
   end)
 end
 
@@ -181,6 +187,10 @@ end
 ---------------------------------------------------------------------------
 emu.register_frame_done(function()
   frame = frame + 1
+  frame_time = mach.time:as_double()
+  -- flush every frame: the low-rate logs would otherwise lose their tail when
+  -- -seconds_to_run ends the run without the stop notifier having fired
+  for _, f in ipairs(logs) do f:flush() end
   if phys then
     local words = {}
     for a = 0x900c70, 0x900d5e, 2 do
@@ -193,7 +203,11 @@ emu.register_frame_done(function()
   end
 end)
 
-emu.register_stop(function()
+emu.add_machine_stop_notifier(function()
+  -- remove the taps before the address spaces go away (MAME 0.289 otherwise
+  -- faults on exit with taps still installed)
+  for _, t in ipairs(taps) do t:remove() end
+  taps = {}
   for _, f in ipairs(logs) do f:close() end
 end)
 
