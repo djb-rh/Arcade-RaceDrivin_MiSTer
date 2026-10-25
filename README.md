@@ -1,10 +1,12 @@
 # Race Drivin' for MiSTer
 
-An FPGA implementation of Atari's Race Drivin' (compact / A046901 MultiSync
-hardware) for the DE10-Nano MiSTer, intended to replace the original board
-stack in a real Race Drivin' cabinet, together with a custom I/O board that
-connects the cabinet's wheel, pedals, shifter, switches, coin door and the two
-RS-232 ports to the core.
+An FPGA implementation of Atari's Race Drivin' for the DE10-Nano MiSTer,
+covering both main boards: the cockpit (A045988 "driver" board) and the
+compact (A046901 MultiSync). The compact build is intended to replace the
+original board stack in a real Race Drivin' compact cabinet, together with a
+custom I/O board that connects the cabinet's wheel, pedals, shifter, switches,
+coin door and the two RS-232 ports to the core. Build order is cockpit first,
+then compact.
 
 Status: **planning**. See [PLAN.md](PLAN.md) for the approach, roadmap and
 open decisions, and [NOTES.md](NOTES.md) for the sourced findings behind it.

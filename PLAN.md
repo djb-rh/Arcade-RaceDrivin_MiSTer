@@ -6,16 +6,28 @@ MAME. Open decisions are collected in section 8.
 
 ## 0. Goal and scope
 
-Build a MiSTer (DE10-Nano) core that runs Race Drivin' compact (`racedrivc`,
-A046901 MultiSync hardware, program rev 5) well enough to replace the Atari
-board stack in the user's real compact cabinet, plus a custom I/O board that
-connects the cabinet's wheel (with force feedback), pedals, shifter, key,
-abort, coin door, self-test switch, coin counters and two RS-232 ports to the
-core. MAME's `harddriv` driver is the behavioural oracle throughout.
+Build a MiSTer (DE10-Nano) core that runs Race Drivin' on both of its main
+boards: the cockpit (`racedriv`, A045988 "driver" board) and the compact
+(`racedrivc`, A046901 MultiSync board), program rev 5 in both cases. The
+compact build must run well enough to replace the Atari board stack in the
+user's real compact cabinet, with a custom I/O board that connects the
+cabinet's wheel (with force feedback), pedals, shifter, key, abort, coin
+door, self-test switch, coin counters and two RS-232 ports to the core.
+MAME's `harddriv` driver is the behavioural oracle throughout.
 
-In scope now: compact hardware with the user's slapstic-free ROM set, USB
-controls for bench work, the I/O board. Later: stock-ROM slapstic, cockpit
-variant, Panorama, link over Wi-Fi.
+Build order: **cockpit first, then compact.** The Hard Drivin' core's
+mature, released path is the cockpit; its compact path is marked
+"feasibility". Everything Race Drivin' adds (DSK board, DSP32C, ASIC65,
+68681, slapstic-free window) is identical on both boards, so it is built once
+on the proven cockpit base, and the compact port then touches only the main
+board decode, video and inputs. The user's `slapfree.py` also has direct
+support for the cockpit rev 5 set. One source tree with a cockpit/compact
+build switch (as the Hard Drivin' core already does with `HD_COCKPIT`)
+produces two RBFs and two MRAs.
+
+In scope now: cockpit and compact hardware with the user's slapstic-free ROM
+sets, USB controls for bench work, the cabinet I/O board for the compact.
+Later: stock-ROM slapstic, Panorama, link over Wi-Fi.
 
 Hard rules: no ROM data in the repository; every tool consumes MAME-style
 zips; the project is GPL-3.0-or-later (forced by the Hard Drivin' core).
@@ -53,11 +65,14 @@ diagnostic RAM probes (NOTES.md section 2, "Hard Drivin'-specific code").
 
 ### The Race Drivin' delta, concretely
 
-From MAME: `RACEDRIVC_BOARD = multisync_nomsp + adsp + dsk + sound` versus
-Hard Drivin' compact `multisync_msp + adsp + sound`. So:
+From MAME: `RACEDRIV_BOARD = driver_nomsp + adsp + dsk + sound` versus Hard
+Drivin' cockpit `driver_msp + adsp + sound`, and `RACEDRIVC_BOARD =
+multisync_nomsp + adsp + dsk + sound` versus Hard Drivin' compact
+`multisync_msp + adsp + sound`. The delta is the same on both boards:
 
-1. Remove the MSP (the compact has none; reads at 0xC04000 return 0xFFFF).
-   This frees roughly 128 KiB of block RAM and a 34010 instance.
+1. Remove the MSP (neither Race Drivin' board has one; reads at 0xC04000
+   return 0xFFFF). This frees roughly 128 KiB of block RAM and a 34010
+   instance on either build.
 2. The slapstic 137412-117 is present in Race Drivin' (Hard Drivin' deletes
    it with the MSP). With the slapstic-free set, 0x0E0000-0x0FFFFF decodes as
    flat ROM. Stock ROMs would need an HDL slapstic.
@@ -80,8 +95,27 @@ Hard Drivin' compact `multisync_msp + adsp + sound`. So:
 8. Replace every Hard Drivin' ROM-address hook with Race Drivin' equivalents
    or, better, with hardware-faithful behaviour that needs no hooks.
 9. The GSP "protection" fail counter MAME zeroes at GSP 0xFFF95CD0 hints at a
-   timing or consistency check in the compact GSP program; investigate in
-   MAME before assuming the FPGA GSP passes it.
+   timing or consistency check in the compact GSP program (MAME applies it
+   to the compact only); investigate in MAME before assuming the FPGA GSP
+   passes it.
+
+### Cockpit versus compact, concretely
+
+What changes between the two Race Drivin' builds (all already modelled in
+some form by the Hard Drivin' core, so this is a port, not new design):
+
+| | Cockpit (`racedriv`, driver board) | Compact (`racedrivc`, MultiSync) |
+|---|---|---|
+| Wheel | 12-bit ADC ch 0 at 0xB80000 (0x010-0xFF0) plus an 8-bit copy on ADC0809 ch 5 that the game cross-checks before enabling force feedback | Quadrature counter at 0x400000, centre-index edge latch in port 1 bit 14, cleared at 0x408000 |
+| Pedals | ADC0809 ch 0 gas, ch 1 clutch; 12-bit ADC ch 1 brake | ADC0809 ch 0 gas, ch 1 clutch, ch 6 force brake (0xF0 released to 0x20) |
+| Other analog | ch 2 seat, ch 3/4 shifter Y/X, ch 6 line volts | none (gears are four maintained switches on port 1 bits 8-11) |
+| Switch port | IN0 at 0x600000 | IN0 at 0x60C000 |
+| Video | 16 MHz, 640x417 total, 508x384 visible, about 25 kHz, 1bpp expander at 0x02000000-0x0207FFFF, 1 MiB VRAM | 12 MHz, 646x308 total, 512x288 visible, about 18.6 kHz, 2bpp expander at 0x02000000-0x020FFFFF, 512 KiB VRAM mirrored, halved shift-register copies |
+| ROMs | DSK 136077-4030/4031, ADSP 136077-2021/2023/1022/1024 | DSK 136078-1030/1031, ADSP 136077-1021/1023/1022/1024 |
+| Slapstic-free set | `slapfree.py` (SHA1 table has cockpit rev 5) | `rdtrack.stockcar --slapstic free` (pattern-matched edits) |
+
+The force-feedback output (8-bit latch at 0xB00000), coin counters, lamps,
+DSK board, DUART, sound board and ADSP board are identical.
 
 ## 2. The hard parts and the chosen options
 
@@ -303,13 +337,14 @@ revision. Rebuild the unmodified cockpit core and run it on the user's MiSTer
 to prove the toolchain. Write the MAME trace tooling in `mame/`. Done when a
 locally built RBF boots Hard Drivin' and the oracle scripts produce traces.
 
-**M1 — Compact main board runs the Race Drivin' program to its first DSK
+**M1 — Cockpit main board runs the Race Drivin' program to its first DSK
 dependency.**
-Start from the compact build; drop the MSP; flat Y window; Race Drivin' MRA
-for the slapstic-free compact set (main 1 MiB, ADSP ROMs, 5 sample ROMs, sound
-ROM, 200e/210e); replace Hard Drivin' ROM hooks; stub DSK registers to known
-values. Done when the 68010 PC trace matches MAME from reset until the first
-DSK access, and the self-test menu is reachable with the service switch.
+Start from the released cockpit build; drop the MSP; flat Y window; Race
+Drivin' MRA for the slapstic-free cockpit set (main 1 MiB, ADSP ROMs, 5
+sample ROMs, sound ROM, 200e/210e); replace Hard Drivin' ROM hooks; stub DSK
+registers to known values. Done when the 68010 PC trace matches MAME from
+reset until the first DSK access, and the self-test menu is reachable with
+the service switch.
 
 **M2 — DSK board without the DSP32C.**
 DSK RAM, ZRAM, ROM window, control latch, IRQ 4 plumbing, ASIC65 simulation,
@@ -323,12 +358,13 @@ real program; then PIO integration; then on hardware. Done when the game
 reaches attract with the drone cars driving, and the physics block at
 0x900C70 matches MAME frame-for-frame on a scripted input replay.
 
-**M4 — Playable with USB controls.**
-Adapt the existing USB input mapping to the compact's Race Drivin' ports:
-wheel counter and centre index, pedals, maintained shifter switches, key,
-abort, coins, self-test, DIP/DIAGN; surface the force byte, counters and lamps
-on debug pins and the OSD. Done when calibration completes and a full race
-can be driven; frame hashes compared with MAME on an attract-mode replay.
+**M4 — Cockpit playable with USB controls.**
+Adapt the existing cockpit USB mapping to Race Drivin': 12-bit wheel with the
+matching 8-bit copy on ADC channel 5, pedals, seat and shifter pots, key,
+abort, coins, self-test, DIP/DIAGN; surface the force byte, counters and
+lamps on the OSD. Done when calibration completes and a full race can be
+driven; frame hashes compared with MAME on an attract-mode replay. First
+release candidate: `RaceDrivin_cockpit.rbf` plus MRA.
 
 **M5 — Serial.**
 Link play between the core and a MAME instance (and then two cores) over a
@@ -336,16 +372,27 @@ USB-serial adapter or the user-port UART; the side-pod stream on Serial B
 decoded by the user's `podlink.py`. Done when LINKED GAME 1/2 completes a race
 against MAME and pod packets parse.
 
-**M6 — Cabinet board.**
+**M6 — Compact port.**
+Switch the build to the MultiSync main board: compact decode (IN0 at
+0x60C000, wheel counter at 0x400000 with centre-index latch, port 1 gears,
+force brake on channel 6), multisync video (12 MHz, 646x308, 2bpp expander,
+halved shift-register copies, verified against MAME `scanline_multisync`
+and `hdgsp_vram_2bpp_w`), compact ROM set and MRA, the GSP protection
+counter question. Done when the compact set reaches the same M4/M5 bar as
+the cockpit on a MAME replay, and native 18.6 kHz output has been checked
+against the cabinet monitor. Second release candidate:
+`RaceDrivin_compact.rbf` plus MRA.
+
+**M7 — Cabinet board.**
 Frame protocol spec, KiCad board, MCU firmware, `rd_cabinet_io`. Bench with
 the real wheel, pedals and shifter on the desk, then force feedback against
-the cabinet's motor amp, then installation. Done when the cabinet plays with
-every control and the coin counters count.
+the cabinet's motor amp, then installation in the compact. Done when the
+cabinet plays with every control and the coin counters count.
 
-**M7 — Polish and stretch.**
-Cycle-accurate 68010 pacing; HDL slapstic for stock sets; cockpit variant;
-Panorama centre and side boards (the ADSP-only side board is small);
-Wi-Fi link bridge; release packaging (RBF, MRAs, docs).
+**M8 — Polish and stretch.**
+Cycle-accurate 68010 pacing; HDL slapstic for stock sets; Panorama centre and
+side boards (the ADSP-only side board is small); Wi-Fi link bridge; release
+packaging (both RBFs, MRAs, docs).
 
 ## 6. Tooling and where synthesis runs
 
@@ -387,7 +434,7 @@ releases/   RBF + MRA
 | DSP32C DAU float semantics differ from MAME's `double` model in visible ways | Lock-step traces on real program data; accept differences only where MAME is itself approximate |
 | DSP32C RAM footprint exceeds free BRAM | Measure in MAME first; SDRAM fallback with cache |
 | 68010 pacing model breaks Race Drivin' boot or link timing | Cycle-based pacing in M7 if traces diverge |
-| GSP protection counter or 2bpp expander path misbehaves | Investigate in MAME at M1; frame-hash comparison |
+| GSP protection counter or 2bpp expander path misbehaves on the compact | Investigate in MAME before M6; frame-hash comparison |
 | Quartus on Apple Silicon too slow or unstable | x86 Linux box / CI runner |
 | Compact motor amp interface unknown | Measure on the cabinet before board layout; F2 fallback |
 | Link protocol intolerant of MCU/Wi-Fi latency | Keep Serial A on raw user-port lines; measure before moving it |
@@ -408,7 +455,7 @@ releases/   RBF + MRA
 6. **Monitor**: keep the compact CRT fed natively at about 18.6 kHz from the
    analog board (needs a sync test), or an LCD via HDMI?
 7. **Slapstic**: slapstic-free only (recommended now), HDL slapstic later?
-8. **Scope**: compact first, cockpit (`racedriv`, which you also own ROMs
-   for) later? Panorama?
+8. **Scope**: decided 2026-10-24: both boards, cockpit first then compact
+   (section 0). Panorama remains a stretch goal.
 9. **Upstream relationship**: fork quietly, or contact Fulviuus about a
    shared tree, since the compact and DSK work could flow back?
