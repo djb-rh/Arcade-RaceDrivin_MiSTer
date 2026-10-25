@@ -460,9 +460,12 @@ release candidate: `RaceDrivin_cockpit.rbf` plus MRA.
   `mame/inputs.lua`, `tb_core +inputs=`), calibrated-NVRAM sim runs
   (`tools/nvram2hex.py`), the cabinet board link (`rtl/io/rd_cabinet_io.sv`,
   docs/cabinet-io.md, ESP32 model and unit test), OSD input selector, force
-  byte / coin counter / lamp outputs captured (NOTES.md section 11). Not
+  byte / coin counter / lamp outputs captured, zero RAM from MRA index 3,
+  68010 divider 18 (NOTES.md section 11). The scripted inputs reach the
+  game identically on both machines (its DSK RAM input block agrees). Not
   yet: the Quartus build and USB mapping check on hardware, the ESP32
-  firmware and board, frame hashes.
+  firmware and board, frame hashes, the self-test's DSK items (hours of
+  simulation; hardware).
 
 **M5 — Serial.**
 Full 68681 model with both channels exposed to the frame protocol and, for

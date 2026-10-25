@@ -892,3 +892,16 @@ by lock-step against MAME instruction traces (`mame/dsp32-measure.patch`
   slow instead of 10% fast (write 1,068,752, sim 1.991 s, MAME 1.968 s).
   TG68K is not cycle-exact, so no single divider matches every instruction
   mix; cycle-faithful pacing would need per-instruction cycle counts.
+- **Scripted inputs, both machines.** MAME with `inputs/play.txt` (coin at
+  9 s, Key, first gear, full throttle and a steering weave from 17 s, from
+  the calibrated NVRAM) against the sim with the same script and
+  `tools/nvram2hex.py` images. The write comparison stops where the normal
+  run stops (nested interrupts at sim 2.8 s), before the first input event,
+  so the check is the game's own input block in DSK RAM (oracle `RD_PHYS`
+  words at 0x900D28-0x900D38 against the sim's writes there): at 20 s both
+  hold throttle 0x0FCD, brake 0x1000 (released), clutch 0, key 0, and the
+  wheel inside the weave's 0x01F0-0x0300 band (the two machines are at
+  different phases of the sine); at 8.5 s both hold zeros. So the pedals,
+  wheel and switches reach the game through MAME's exact calibration
+  arithmetic. This 21 s run was at the old divider (16); the comparison
+  itself needs the interrupt-alignment work before it can follow inputs.
