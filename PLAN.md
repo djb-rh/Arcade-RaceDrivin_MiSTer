@@ -459,16 +459,15 @@ packaging (both RBFs, MRAs, docs).
 
 ## 6. Tooling and where synthesis runs
 
-- **Synthesis**: Quartus runs only on x86 Linux/Windows. On this Apple
-  Silicon Mac the practical route is Docker Desktop with Rosetta (not yet
-  installed) using a Quartus image; expect several-times-slower builds and
-  give Docker 8 GB or more. An x86 Linux box or a self-hosted GitHub Actions
-  runner is faster and is the recommended primary if available. Version:
-  the Hard Drivin' core builds on Quartus Lite 24.1 (its qsf and PLLs are
-  24.1); MiSTer's standard is 17.0 (vanishing from Intel's site but baked
-  into `raetro/quartus:17.0`). Recommendation: stay on 24.1 to inherit the
-  Hard Drivin' project unchanged, building our own Docker image from the
-  24.1 Lite installer; revisit if timing or framework issues appear.
+- **Synthesis**: Quartus runs only on x86 Linux/Windows. Decided: the
+  user's x86 Linux machine is the build host, running Quartus Lite 24.1
+  (the version the Hard Drivin' core's qsf and PLLs target). Builds are
+  driven from the Mac over SSH by a `make build` wrapper that rsyncs the
+  tree and fetches `output_files/*.rbf` and the timing reports back. A
+  self-hosted GitHub Actions runner on the same machine is an optional
+  later step. Fallback if the box is unavailable: Docker Desktop with
+  Rosetta on the Mac (several times slower, 8 GB or more for Docker).
+  MiSTer's official 17.0 is not used.
 - **Simulation**: Verilator 5 via Homebrew (native arm64). MAME 0.289 is
   already built locally as the oracle.
 - **Python 3** for MRA generation, ROM-set validation from zips, trace
@@ -502,25 +501,35 @@ releases/   RBF + MRA
 | Compact motor amp interface unknown | Measure on the cabinet before board layout; F2 fallback |
 | Link protocol intolerant of MCU/Wi-Fi latency | Measure in MAME with an artificially delayed pty bridge at M5; two user-port lines are reserved for raw Serial A if needed |
 
-## 8. Open decisions for the user
+## 8. Decisions
 
-1. **Where does Quartus run?** Docker+Rosetta on this Mac, an x86 Linux
-   machine you own, or a cloud/CI runner? Do you have an x86 Linux box?
-2. **Quartus version**: stay on 24.1 like the Hard Drivin' core
-   (recommended) or move to MiSTer's 17.0?
-3. **I/O architecture**: analog I/O board plus a user-port MCU board
-   (recommended), or Digital I/O board plus a parallel GPIO_1 board with an
-   external video solution?
-4. **MCU**: decided 2026-10-24: ESP32-S3, carrying both serial channels and
-   the Wi-Fi link/pod bridge (section 3.2).
-5. **Force feedback**: drive the cabinet's original motor amp (is it present
-   and working? can we trace its interface?) or a modern H-bridge?
-6. **Monitors**: the cabinets keep their monitors, fed natively from the
-   analog board (cockpit about 25 kHz, compact about 18.6 kHz); each monitor
-   type needs one sync test. Bench viewing is covered by the EGA-to-VGA
-   converter (cockpit) and the CGA LCD (compact). Anything else wanted here?
-7. **Slapstic**: slapstic-free only (recommended now), HDL slapstic later?
-8. **Scope**: decided 2026-10-24: both boards, cockpit first then compact
-   (section 0). Panorama remains a stretch goal.
-9. **Upstream relationship**: fork quietly, or contact Fulviuus about a
-   shared tree, since the compact and DSK work could flow back?
+Decided 2026-10-24 with the user:
+
+1. **Quartus host**: an x86 Linux machine the user owns is the build host
+   (details to be recorded in `docs/toolchain.md` at M0: hostname, distro,
+   RAM, SSH access). Builds are driven from the Mac over SSH; a self-hosted
+   GitHub Actions runner on that machine is optional later. Docker-on-Mac is
+   the fallback only.
+2. **Quartus version**: Lite 24.1, as the Hard Drivin' core uses.
+3. **I/O architecture**: analog I/O board for video and sound plus the
+   user-port cabinet board (section 3.2). Assumed; no alternative chosen.
+4. **MCU**: ESP32-S3, carrying both serial channels and the Wi-Fi link/pod
+   bridge (section 3.2).
+5. **Force feedback**: drive the cabinets' original motor amps first, by
+   reproducing the game board's 8-bit latch signals; the cockpit amp's
+   strobe protocol is traced from the 044253-01 schematic and checked on a
+   working amp before layout. Modern H-bridge is the fallback.
+6. **Monitors**: cabinets keep their monitors, fed natively from the analog
+   board (cockpit about 25 kHz, compact about 18.6 kHz), one sync test per
+   monitor type. Bench viewing: EGA-to-VGA converter (cockpit), CGA LCD
+   (compact).
+7. **Slapstic**: slapstic-free sets only for now; HDL slapstic is an M8
+   stretch goal. Assumed.
+8. **Scope**: both boards, cockpit first then compact; Panorama is a
+   stretch goal.
+9. **Upstream**: fork quietly for now under GPL-3.0-or-later with full
+   attribution; revisit contacting the author once something runs.
+
+Still open: nothing gating M0. Before M7: measure the compact motor amp
+interface and the cockpit amp's strobe protocol; the link-latency result
+from M5.
