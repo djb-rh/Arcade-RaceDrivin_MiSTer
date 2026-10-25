@@ -26,7 +26,7 @@ module tb_core;
   `define ASIC65_SIN_FILE "rtl/asic65/asic65_sin.hex"
 `endif
 `ifndef MAIN_CPU_DIV
-  `define MAIN_CPU_DIV 16
+  `define MAIN_CPU_DIV 18
 `endif
 `ifndef DSK_ZRAM_HI_FILE
   `define DSK_ZRAM_HI_FILE ""

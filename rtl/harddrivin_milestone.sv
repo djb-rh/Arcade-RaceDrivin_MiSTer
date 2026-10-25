@@ -130,8 +130,10 @@ module harddrivin_milestone #(
   // 1: the MSP (second TMS34010) is present (Hard Drivin').  0: Race Drivin'
   //    boards have none; its host registers read 0xFFFF and writes are dropped.
   parameter bit MSP = 1,
-  // 68010 clock enable: one TG68K step every MAIN_CPU_DIV clocks of 48 MHz (pacing, NOTES.md 8/9)
-  parameter int MAIN_CPU_DIV = 16,
+  // 68010 clock enable: one TG68K step every MAIN_CPU_DIV clocks of 48 MHz.
+  // 16 was the Hard Drivin' core's choice; 18 keeps Race Drivin' within a few
+  // percent of MAME's 8 MHz 68010 over the boot (NOTES.md section 11).
+  parameter int MAIN_CPU_DIV = 18,
   parameter        ZERO_RAM_INIT_HI_FILE = "",
   parameter        ZERO_RAM_INIT_LO_FILE = "",
   // ASIC65 sine table (tools/asic65_sintab.py), relative to the project.

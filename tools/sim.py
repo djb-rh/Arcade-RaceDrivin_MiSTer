@@ -269,7 +269,7 @@ def main():
     b.add_argument("--trace-waves", action="store_true")
     b.add_argument("--opt", action="store_true", help="-O3 into sim/build/obj-opt (slower build, faster sim)")
     b.add_argument("--threads", type=int, default=1)
-    b.add_argument("--cpu-div", type=int, default=16, help="68010 clock-enable divider (pacing experiments)")
+    b.add_argument("--cpu-div", type=int, default=18, help="68010 clock-enable divider (18 matches MAME best; 16 was the HD core's)")
     b.add_argument("--jobs", type=int, default=min(8, os.cpu_count() or 1))
     b.set_defaults(func=cmd_build)
     r = sub.add_parser("run")

@@ -883,3 +883,12 @@ by lock-step against MAME instruction traces (`mame/dsp32-measure.patch`
   board's zero RAM before any .nvm, so no ROM data enters the bitstream and
   a saved calibration still wins. The DSK zero RAM powers up as 0xff unless
   a .nvm has it.
+- **68010 pacing.** `MAIN_CPU_DIV` (TG68K clock enable, one step every N
+  clocks of 48 MHz) is now 18 instead of the Hard Drivin' core's 16. Against
+  MAME's 8 MHz 68010 the sim's time at matching writes is then 0.86x in the
+  GSP download loop, 0.99x at 0.9 s, 1.05x at 1.25 s, 1.03x at 1.78 s and
+  0.99x at 2.1 s (with 16: 0.76x, 0.88x, 0.94x, 0.92x, 0.90x), and the
+  exact write match reaches the same interrupt-phase point with the sim 1%
+  slow instead of 10% fast (write 1,068,752, sim 1.991 s, MAME 1.968 s).
+  TG68K is not cycle-exact, so no single divider matches every instruction
+  mix; cycle-faithful pacing would need per-instruction cycle counts.
