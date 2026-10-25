@@ -15,6 +15,9 @@
 --   RD_PHYS=1           per-frame dump of the DSK RAM physics block and input block
 --   RD_HASH=<n>         CRC of the screen every n frames (slow in Lua; 60 is sensible)
 --   RD_TRACE68K=1       68010 instruction trace through the debugger (needs -debug)
+--   RD_BUSWRITES=1      every 68010 write (address, data) outside ROM: the exact
+--                       sequence the FPGA core must reproduce (compare with
+--                       tools/tracediff.py against the sim's bus trace)
 --
 -- Every line starts with the frame number and the emulated time so logs from
 -- different runs and from the FPGA can be aligned. Addresses are 68010 byte
@@ -116,6 +119,16 @@ if env("RD_OUT") == "1" then
   -- nwr: CR2/CR1, LC1/LC2 lamps, ZP1/ZP2, /GSPRES, /MSPRES
   wtap(0x604000, 0x607fff, "nwr_w", function(offset, data, mask)
     f:write(stamp(), string.format("nwr fn=%d val=%d\n", (offset >> 1) & 7, (offset >> 4) & 1))
+  end)
+end
+
+---------------------------------------------------------------------------
+-- Every 68010 write. 0x000000-0x0FFFFF is ROM (writes there are slapstic
+-- pokes on stock sets and are logged too, since the core sees them).
+if env("RD_BUSWRITES") == "1" then
+  local f = openlog("writes")
+  wtap(0x000000, 0xffffff, "all_w", function(offset, data, mask)
+    f:write(string.format("%06x %04x %04x\n", offset, data & 0xffff, mask & 0xffff))
   end)
 end
 
