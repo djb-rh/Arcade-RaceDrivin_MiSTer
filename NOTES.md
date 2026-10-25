@@ -598,9 +598,19 @@ with the GHDL-converted TG68K, compared write-for-write with MAME
 - **Write order inside a long**: TG68K writes the high word first, MAME's
   68000 core the low word first (MOVEM -(SP), PEA). Same memory image;
   `tracediff.py` tolerates and counts the swaps.
-- **Result so far**: 700 ms of simulation = 435,749 writes, all identical to
-  MAME's sequence (MAME reaches the same write at 0.817 s); 11 long-write
-  half swaps. No divergence found yet.
+- **Result: the write sequence matches MAME from reset to the first DSK
+  access.** 884,235 identical writes; the sim reaches that point at 1.374 s,
+  MAME at 1.434 s. The deciding reads are DSK RAM at 0x905950/52/54/55 and
+  0x90597A/7C (sim: open bus 0xFFFF; MAME: RAM), after which MAME starts the
+  DSK initialisation (control latch 0x85C808, ASIC65 command 7 at 0x914002,
+  DSK RAM writes at 0x900000+, GSP reset toggled again at 1.438 s, DUART
+  programmed at 1.59 s) while the core skips to the next test routine. The
+  pointer at 0xFFFF5E/60 walks the boot-test routine table (0x3B276 ->
+  0x3B296 -> ...). This is M1's end point; M2 starts with DSK RAM.
+- MAME timeline (cockpit, fresh NVRAM, no inputs): GSP released at 0.85 ms;
+  second GSP download batch at 0.517 s; MSP latch toggled 0.526 s; first
+  ASIC65 command 1.438 s; DUART init 1.590 s; input scanning (SEL latch
+  polls every 4 ms) and wheel-force writes from 1.98 s.
 - **68010 pacing**: with the imported 1-in-16 clock enable the GSP download
   loop (`move.w (A0)+,$C0000C; dbra`) runs 1.32x faster than MAME's 8 MHz
   68010 (231,958 writes at 0.391 s vs 0.517 s). The HD author tuned the

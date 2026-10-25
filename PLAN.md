@@ -401,10 +401,12 @@ sample ROMs, sound ROM, 200e/210e); replace Hard Drivin' ROM hooks; stub DSK
 registers to known values. Done when the 68010 PC trace matches MAME from
 reset until the first DSK access, and the self-test menu is reachable with
 the service switch.
-  *Progress 2026-10-25:* simulated with the real TG68K; after two core
+  *Progress 2026-10-25:* in simulation, with the real TG68K and two core
   changes (GSP host port reachable while /GSPRES is held; `MSP=0` makes the
-  MSP absent) the program's first 435,749 bus writes (0.70 s of machine time)
-  match MAME exactly. Next: run deeper (NOTES.md section 8).
+  MSP absent), the program's write sequence matches MAME exactly from reset
+  to the first DSK RAM read (884,235 writes, 1.37 s of machine time). Still
+  to do for M1: Race Drivin' ROM hooks/MRA in the Quartus top, the self-test
+  menu check, and the same on hardware (NOTES.md section 8).
 
 **M2 — DSK board without the DSP32C.**
 DSK RAM, ZRAM, ROM window, control latch, IRQ 4 plumbing, ASIC65 simulation,

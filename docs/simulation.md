@@ -51,8 +51,9 @@ python3 tools/sim.py run --ms 50 --trace sim/build/run/trace.txt        # --serv
 ```
 
 The run prints one progress line per emulated millisecond and simulates
-about 4.6 ms of machine time per wall second (`build --opt` for -O3). The
-build is tied
+about 5.3 ms of machine time per wall second; `build --opt` (-O3, into
+`sim/build/obj-opt`, run with `run --opt`) gives 5.7, and `--threads 2`
+makes it slower, so the plain build is fine. The build is tied
 to one ROM set because the core takes the 200E/210E power-up ZRAM images as
 compile-time parameters (the Hard Drivin' core bakes them into the bitstream;
 M1 moves them to a download index).
