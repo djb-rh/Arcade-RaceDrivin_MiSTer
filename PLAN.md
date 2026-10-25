@@ -495,9 +495,9 @@ releases/   RBF + MRA
 |---|---|
 | DSP32C DAU float semantics differ from MAME's `double` model in visible ways | Lock-step traces on real program data; accept differences only where MAME is itself approximate |
 | DSP32C RAM footprint exceeds free BRAM | Measure in MAME first; SDRAM fallback with cache |
-| 68010 pacing model breaks Race Drivin' boot or link timing | Cycle-based pacing in M7 if traces diverge |
+| 68010 pacing model breaks Race Drivin' boot or link timing | Cycle-based pacing in M8 if traces diverge |
 | GSP protection counter or 2bpp expander path misbehaves on the compact | Investigate in MAME before M6; frame-hash comparison |
-| Quartus on Apple Silicon too slow or unstable | x86 Linux box / CI runner |
+| Linux build box unavailable | Docker with Rosetta on the Mac as fallback |
 | Compact motor amp interface unknown | Measure on the cabinet before board layout; F2 fallback |
 | Link protocol intolerant of MCU/Wi-Fi latency | Measure in MAME with an artificially delayed pty bridge at M5; two user-port lines are reserved for raw Serial A if needed |
 
