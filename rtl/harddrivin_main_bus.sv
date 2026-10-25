@@ -72,6 +72,12 @@ module harddrivin_main_bus #(
   input  logic        duart_rxa_i,
   output logic        duart_txb_o,
   input  logic        duart_rxb_i,
+  output logic [31:0] duart_tx_rate_a_o,   // programmed bit rates, for the cabinet link
+  output logic [31:0] duart_rx_rate_a_o,
+  output logic [31:0] duart_tx_rate_b_o,
+  output logic [31:0] duart_rx_rate_b_o,
+  output logic [1:0]  coin_counter_o,      // 0xa00000 latch functions 6, 7
+  output logic [7:0]  force_byte_o,        // 0xb00000: wheel motor command
   output logic        watchdog_clear_o,
   output logic        irq_clear_o,
   output logic [7:0]  control_latch_o,
@@ -422,8 +428,28 @@ module harddrivin_main_bus #(
     .req_i(duart_read || duart_write), .we_i(duart_write), .addr_i(addr_i[4:1]),
     .wdata_i(wdata_i[15:8]), .rdata_o(duart_rdata), .irq_o(duart_irq_o),
     .tx_a_o(duart_txa_o), .rx_a_i(duart_rxa_i), .tx_b_o(duart_txb_o), .rx_b_i(duart_rxb_i),
-    .ip_i(7'h40), .op_o(duart_op_unused)     // IP6 high, IP0-5 low: what MAME's board reads
+    .ip_i(7'h40), .op_o(duart_op_unused),    // IP6 high, IP0-5 low: what MAME's board reads
+    .tx_a_rate_o(duart_tx_rate_a_o), .rx_a_rate_o(duart_rx_rate_a_o),
+    .tx_b_rate_o(duart_tx_rate_b_o), .rx_b_rate_o(duart_rx_rate_b_o)
   );
+
+  // Output latches the game drives (MAME hd68k_wr0_write / hd68k_wr2_write):
+  // 0xa00000 is a 74LS259 like the control latch (A3:A1 function, A4 value),
+  // functions 6 and 7 the two coin counters; 0xb00000 writes latch the
+  // force byte for the wheel motor in the upper data byte.
+  logic [1:0] coin_counter_q;
+  logic [7:0] force_byte_q;
+  wire wr0_select = addr_i[23:19] == 5'b10100;              // 0xa00000-0xa7ffff
+  always_ff @(posedge clk_i) begin
+    if (rst_i) begin coin_counter_q <= 2'b00; force_byte_q <= 8'h00; end
+    else if (new_cycle && busstate_i == BUS_WRITE) begin
+      if (wr0_select && addr_i[3:1] == 3'd6) coin_counter_q[0] <= addr_i[4];
+      if (wr0_select && addr_i[3:1] == 3'd7) coin_counter_q[1] <= addr_i[4];
+      if (compact_adc8_select && addr_i[18:1] == 18'd0 && !nuds_i) force_byte_q <= wdata_i[15:8];
+    end
+  end
+  assign coin_counter_o = coin_counter_q;
+  assign force_byte_o   = force_byte_q;
   logic unused_duart_op;
   assign unused_duart_op = ^duart_op_unused;
 

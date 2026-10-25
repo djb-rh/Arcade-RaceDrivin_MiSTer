@@ -456,6 +456,13 @@ abort, coins, self-test, DIP/DIAGN; surface the force byte, counters and
 lamps on the OSD. Done when calibration completes and a full race can be
 driven; frame hashes compared with MAME on an attract-mode replay. First
 release candidate: `RaceDrivin_cockpit.rbf` plus MRA.
+- Progress 2026-10-25: shared input script (`tools/inputscript.py`,
+  `mame/inputs.lua`, `tb_core +inputs=`), calibrated-NVRAM sim runs
+  (`tools/nvram2hex.py`), the cabinet board link (`rtl/io/rd_cabinet_io.sv`,
+  docs/cabinet-io.md, ESP32 model and unit test), OSD input selector, force
+  byte / coin counter / lamp outputs captured (NOTES.md section 11). Not
+  yet: the Quartus build and USB mapping check on hardware, the ESP32
+  firmware and board, frame hashes.
 
 **M5 — Serial.**
 Full 68681 model with both channels exposed to the frame protocol and, for

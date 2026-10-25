@@ -116,6 +116,10 @@ def cmd_build(args):
            "-Irtl", "-Irtl/ika32010", "-Irtl/tms34010",
            f"-DZRAM_HI_FILE=\"{hi}\"", f"-DZRAM_LO_FILE=\"{lo}\"",
            f"-DASIC65_SIN_FILE=\"{ROOT / 'rtl' / 'asic65' / 'asic65_sin.hex'}\""]
+    dhi, dlo = roms / "dsk_zram_hi.hex", roms / "dsk_zram_lo.hex"
+    if dhi.exists() and dlo.exists():
+        cmd += [f"-DDSK_ZRAM_HI_FILE=\"{dhi}\"", f"-DDSK_ZRAM_LO_FILE=\"{dlo}\""]
+        print("DSK zero RAM from", dhi.parent)
     cmd += [f"-Wno-{w}" for w in WARN_OFF]
     cmd += [f"-D{d}" for d in DEFINES]
     if args.trace_waves:
@@ -149,6 +153,8 @@ def cmd_run(args):
     if args.trace:
         Path(args.trace).parent.mkdir(parents=True, exist_ok=True)
         plus.append(f"+trace={Path(args.trace).resolve()}")
+    if args.inputs:
+        plus.append(f"+inputs={Path(args.inputs).resolve()}")
     if args.service:
         plus.append("+service=1")
         if args.service_at:
@@ -237,6 +243,22 @@ def cmd_duart_test(args):
     sys.exit(subprocess.run([str(out / "obj" / "Vtb_duart"), f"+log={Path(args.log).resolve()}"], cwd=out).returncode)
 
 
+def cmd_cabio_test(args):
+    """Unit test of the cabinet I/O link with the ESP32 model and a MC68681."""
+    out = BUILD / "cabio"
+    out.mkdir(parents=True, exist_ok=True)
+    cmd = ["verilator", "--binary", "--timing", "-Wno-fatal", "-Wno-WIDTH", "--Mdir", str(out / "obj"),
+           "--top-module", "tb_cabio", str(ROOT / "rtl" / "io" / "rd_cabinet_io.sv"), str(ROOT / "rtl" / "duart" / "mc68681.sv"),
+           str(ROOT / "sim" / "models" / "sim_cabinet_io.sv"), str(ROOT / "sim" / "tb_cabio.sv")]
+    r = subprocess.run(cmd, cwd=ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                       env=dict(os.environ, PATH=SIM_PATH))
+    (out / "build.log").write_text(r.stdout)
+    if r.returncode != 0:
+        print(r.stdout[-4000:])
+        sys.exit("verilator failed (sim/build/cabio/build.log)")
+    sys.exit(subprocess.run([str(out / "obj" / "Vtb_cabio")], cwd=out).returncode)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -253,6 +275,7 @@ def main():
     r.add_argument("--ms", type=int, default=100)
     r.add_argument("--trace")
     r.add_argument("--vcd")
+    r.add_argument("--inputs", help="cabinet input script (tools/inputscript.py) to replay")
     r.add_argument("--service", action="store_true")
     r.add_argument("--service-at", type=int, default=0, metavar="MS", help="press the self-test switch at this time instead of from reset")
     r.add_argument("--opt", action="store_true", help="run the -O3 build")
@@ -277,6 +300,8 @@ def main():
     u = sub.add_parser("duart-test", help="replay a mame/duart_test.lua log against the MC68681 model")
     u.add_argument("log")
     u.set_defaults(func=cmd_duart_test)
+    c = sub.add_parser("cabio-test", help="unit test of the cabinet I/O link (rd_cabinet_io + ESP32 model + MC68681)")
+    c.set_defaults(func=cmd_cabio_test)
     args = ap.parse_args()
     args.func(args)
 

@@ -13,7 +13,7 @@ module tb_duart;
   logic req = 0, we = 0; logic [3:0] addr = 0; logic [7:0] wdata = 0, rdata; logic irq;
   logic txa, txb;
   mc68681 dut (.clk_i(clk), .rst_i(rst), .req_i(req), .we_i(we), .addr_i(addr), .wdata_i(wdata), .rdata_o(rdata), .irq_o(irq),
-               .tx_a_o(txa), .rx_a_i(1'b1), .tx_b_o(txb), .rx_b_i(1'b1), .ip_i(7'h40), .op_o());
+               .tx_a_o(txa), .rx_a_i(1'b1), .tx_b_o(txb), .rx_b_i(1'b1), .ip_i(7'h40), .op_o(), .tx_a_rate_o(), .rx_a_rate_o(), .tx_b_rate_o(), .rx_b_rate_o());
   // the game's own initialisation (from the MAME DUART log) so the test starts from the same state
   task automatic access(input bit w, input int reg_, input logic [7:0] wd, output logic [7:0] rd);
     @(posedge clk); req <= 1; we <= w; addr <= reg_[3:0]; wdata <= wd;

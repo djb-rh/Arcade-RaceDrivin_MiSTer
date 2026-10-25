@@ -78,3 +78,8 @@ the DSP32C runs its real-time physics; `RD_PLAY_T0` moves the timeline and
 (loopback, FIFO, break, parity, counter/timer, output port) and logs every
 read to `RD_DUART_LOG`; `tools/sim.py duart-test <log>` replays it against
 the RTL model.
+
+`mame/inputs.lua` replays a cabinet input script (`tools/inputscript.py`,
+`RD_INPUTS=<file>`) into the cockpit set's ports at frame boundaries, the
+same file `tb_core +inputs=` replays in the sim; `RD_INPUTS_ORACLE=1` loads
+oracle.lua as well.

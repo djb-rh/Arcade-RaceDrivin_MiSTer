@@ -835,3 +835,37 @@ by lock-step against MAME instruction traces (`mame/dsp32-measure.patch`
   about 10% fast and the boot's timed waits run short. Cycle-faithful 68010
   pacing (PLAN.md, later) is what would make the plain comparison hold
   through the attract mode.
+
+## 11. M4: cabinet inputs (2026-10-25)
+
+- **One input script for both machines.** `tools/inputscript.py` writes
+  "time control value" events (values as the 68010 reads them; continuous
+  motions sampled per frame); `mame/inputs.lua` replays them into the
+  cockpit set's ports at frame boundaries and `tb_core +inputs=` at the
+  exact times. MAME applies a programmatic field value at the next frame
+  update, so a port read right after `set_value` still shows the old state
+  (the script echoes a frame later). Digital `set_value(1)` is "active"
+  whatever the field's polarity; analog `set_value(v)` is the raw value,
+  which for the reversed brake pedal means the script's 12-bit ADC value is
+  written as `0xfff - v`.
+- **Calibrated runs.** `tools/nvram2hex.py` turns a MAME nvram directory
+  into the sim's power-up images for the 200E/210E and the DSK 10C/30C
+  zero RAMs (`tools/sim.py build --roms <dir>`), so a sim run can start
+  from the same calibrated cabinet as a MAME run with `-nvram_directory`.
+- **Cabinet I/O board link** (docs/cabinet-io.md): `rtl/io/rd_cabinet_io.sv`
+  on `USER_OUT[0]`/`USER_IN[1]` at 2 Mbaud, 26-byte input frames at 1 kHz
+  with CRC-8, 16-byte output frames in reply (force byte, lamps, coin
+  counters, DSK LED, serial bytes). The DUART's channels stay serial lines:
+  frame bytes are re-serialised onto its RX pins at the rate the game
+  programmed (the DUART now exports its rates) and its TX pins are received
+  at that rate into the output frames. `sim/models/sim_cabinet_io.sv` is
+  the ESP32 side for simulation; `tools/sim.py cabio-test` checks inputs,
+  CRC rejection, the 50 ms silence fallback, both serial directions through
+  a real MC68681, and the outputs: 12 checks pass. The Quartus top gains
+  OSD "Inputs: USB / Cabinet board" and falls back to USB while no board is
+  sending. The ESP32 firmware and the KiCad board are not in this repo yet.
+- **Output latches the core never captured**: 0xA00000 (MAME
+  `hd68k_wr0_write`) is a 74LS259 whose functions 6 and 7 are the coin
+  counters, 0xB00000 writes latch the force byte in the upper data byte
+  (`hd68k_wr2_write`); both are now `harddrivin_main_bus` outputs. The
+  lamps are the control latch's LC1/LC2 bits, the DSK LED latch function 7.

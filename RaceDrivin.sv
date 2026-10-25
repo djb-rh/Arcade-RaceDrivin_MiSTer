@@ -8,7 +8,7 @@ module emu (
   localparam bit COCKPIT = 0;
 `endif
   assign ADC_BUS = 'Z;
-  assign USER_OUT = '1;
+  assign USER_OUT = {6'b111111, cab_link_tx};   // USER_IO[0]: UART to the cabinet board
   assign {UART_RTS, UART_TXD, UART_DTR} = 3'b000;
   assign {SD_SCK, SD_MOSI, SD_CS} = 'Z;
 
@@ -58,6 +58,7 @@ module emu (
     "O[2],Aspect ratio,Original 4:3,Raw pixels;",
     "-;",
     "O[3],Service mode (self-test),Off,On;",
+    "O[10],Inputs,USB,Cabinet board;",
     "-;",
     // Build stamp: bump this for every image handed to hardware so the OSD
     // says which one is loaded.
@@ -523,6 +524,50 @@ module emu (
     1'b1, ~(btn_key | boot_turn_key), ~btn_abort
   };
 
+  // ---- cabinet I/O board (docs/cabinet-io.md) on the user port ---------------
+  // OSD "Inputs: Cabinet board" takes the controls from the board while it is
+  // sending frames; without a board, or with the option off, the USB mapping
+  // above stays in charge.  Both serial channels of the DUART always go to
+  // the board.
+  wire        cab_link_tx, cab_board_ok, cab_frame;
+  wire [15:0] cab_sw;
+  wire [11:0] cab_wheel12, cab_brake12;
+  wire [7:0]  cab_gas, cab_clutch, cab_seat, cab_shx, cab_shy, cab_brake8;
+  wire        duart_txa, duart_txb, cab_rxa, cab_rxb;
+  wire [31:0] duart_tx_rate_a, duart_rx_rate_a, duart_tx_rate_b, duart_rx_rate_b;
+  wire [7:0]  force_byte;
+  wire [1:0]  lamps, coin_counters;
+  wire        dsk_led;
+  wire        use_cab = status[10] && cab_board_ok;
+  rd_cabinet_io u_cabinet_io (
+    .clk_i(clk_core), .rst_i(reset),
+    .uart_rx_i(USER_IN[1]), .uart_tx_o(cab_link_tx),
+    .switches_o(cab_sw), .wheel12_o(cab_wheel12), .brake12_o(cab_brake12),
+    .gas_o(cab_gas), .clutch_o(cab_clutch), .seat_o(cab_seat),
+    .shifter_x_o(cab_shx), .shifter_y_o(cab_shy), .brake8_o(cab_brake8),
+    .board_ok_o(cab_board_ok), .frame_o(cab_frame),
+    .duart_rxa_o(cab_rxa), .duart_rxb_o(cab_rxb), .duart_txa_i(duart_txa), .duart_txb_i(duart_txb),
+    .rx_rate_a_i(duart_rx_rate_a), .rx_rate_b_i(duart_rx_rate_b),
+    .tx_rate_a_i(duart_tx_rate_a), .tx_rate_b_i(duart_tx_rate_b),
+    .force_i(force_byte), .outputs_i({3'b000, dsk_led, coin_counters, lamps})
+  );
+  // cabinet switches: 0 coin 1, 1 coin 2, 2 aux coin, 3 self-test, 4 key, 5 abort,
+  // 6 DIAGN jumper, 9-12 compact gears (all 1 = active); port 1 is active low
+  wire [15:0] cab_port1 = {4'b1111, ~cab_sw[12:9], 5'b11111, ~cab_sw[2], ~cab_sw[4], ~cab_sw[5]};
+  wire        in_coin1   = use_cab ? cab_sw[0] : btn_coin;
+  wire        in_coin2   = use_cab ? cab_sw[1] : 1'b0;
+  wire        in_service = service_mode | (use_cab & cab_sw[3]);
+  wire        in_diag    = use_cab ? ~cab_sw[6] : dip_misc_q[0];
+  wire [15:0] in_port1   = use_cab ? cab_port1 : compact_port1;
+  wire [7:0]  in_gas     = use_cab ? cab_gas : gas_value;
+  wire [7:0]  in_clutch  = use_cab ? cab_clutch : clutch_value;
+  wire [7:0]  in_seat    = use_cab ? cab_seat : seat;
+  wire [7:0]  in_shx     = use_cab ? cab_shx : shifter_x;
+  wire [7:0]  in_shy     = use_cab ? cab_shy : shifter_y;
+  wire [7:0]  in_brake8  = use_cab ? cab_brake8 : brake;
+  wire [11:0] in_steer   = use_cab ? cab_wheel12 : steering;
+  wire [11:0] in_brake12 = use_cab ? (12'hfff - cab_brake12) : (12'hfff - {brake_force, brake_force[7:4]});
+
   harddrivin_milestone #(
     .COCKPIT(COCKPIT),
     .DIAG_FULL(1'b0),   // verification builds keep the GSP boot, runtime and DI-latency pages
@@ -541,14 +586,17 @@ module emu (
     .shifter_calibration_active_o(boot_shifter_active),
     .seat_calibration_active_o(boot_seat_active),
     .calibration_active_o(boot_calibration_active),
-    .coin1_i(btn_coin), .coin2_i(1'b0),
-    .service_i(service_mode), .diag_jumper_i(dip_misc_q[0]), .sw1_i(dip_sw1_q),
-    .duart_txa_o(), .duart_rxa_i(1'b1), .duart_txb_o(), .duart_rxb_i(1'b1),  // to the cabinet I/O board (M4)
-    .compact_port1_i(compact_port1),
-    .accelerator_i(gas_value),
-    .clutch_i(clutch_value), .seat_i(seat), .shifter_x_i(shifter_x),
-    .shifter_y_i(shifter_y), .brake_i(brake),
-    .steering_i(steering), .brake12_i(12'hfff - {brake_force, brake_force[7:4]}), .audio_o(sound_audio),
+    .coin1_i(in_coin1), .coin2_i(in_coin2),
+    .service_i(in_service), .diag_jumper_i(in_diag), .sw1_i(dip_sw1_q),
+    .duart_txa_o(duart_txa), .duart_rxa_i(cab_rxa), .duart_txb_o(duart_txb), .duart_rxb_i(cab_rxb),
+    .duart_tx_rate_a_o(duart_tx_rate_a), .duart_rx_rate_a_o(duart_rx_rate_a),
+    .duart_tx_rate_b_o(duart_tx_rate_b), .duart_rx_rate_b_o(duart_rx_rate_b),
+    .force_byte_o(force_byte), .lamps_o(lamps), .coin_counter_o(coin_counters), .dsk_led_o(dsk_led),
+    .compact_port1_i(in_port1),
+    .accelerator_i(in_gas),
+    .clutch_i(in_clutch), .seat_i(in_seat), .shifter_x_i(in_shx),
+    .shifter_y_i(in_shy), .brake_i(in_brake8),
+    .steering_i(in_steer), .brake12_i(in_brake12), .audio_o(sound_audio),
     .snd_rom_wr_clk_i(CLK_50M), .snd_rom_wr_en_i(snd_rom_wr_q),
     .snd_rom_wr_addr_i(snd_rom_addr_q), .snd_rom_wr_data_i(snd_rom_data_q),
     .nvram_req_i(nvram_req_level), .nvram_we_i(nvram_we), .nvram_addr_i(nvram_addr),

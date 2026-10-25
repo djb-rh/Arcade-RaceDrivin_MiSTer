@@ -24,6 +24,9 @@ Quartus, so milestones M1-M3 can be verified on the Mac.
 | `tools/slapstic_trace.py` | replays a sim bus trace through the 137412-117 model and prints its bank switches |
 | `sim/tb_dsp32.sv` | lock-step test of the DSP32C core against a MAME instruction trace (`tools/sim.py dsp32-test`, docs/dsp32c.md) |
 | `sim/tb_duart.sv` | replays a `mame/duart_test.lua` register log against the MC68681 model (`tools/sim.py duart-test`) |
+| `sim/models/sim_cabinet_io.sv`, `sim/tb_cabio.sv` | the ESP32 cabinet board as a model, and the link unit test (`tools/sim.py cabio-test`, docs/cabinet-io.md) |
+| `tools/inputscript.py`, `mame/inputs.lua` | one cabinet input script replayed by MAME and by `tb_core +inputs=` |
+| `tools/nvram2hex.py` | a MAME nvram directory as the sim's power-up zero-RAM images (`build --roms`) |
 
 Everything generated lives under `sim/build/` (gitignored). ROM images never
 enter the repository.
@@ -56,6 +59,9 @@ python3 tools/sim.py run --ms 50 --trace sim/build/run/trace.txt        # --serv
 python3 tools/sim.py asic65-test run1.asic65.log                        # ASIC65 model vs a MAME log
 python3 tools/sim.py dsp32-test dsp.trace                               # DSP32C core vs a MAME trace
 python3 tools/sim.py duart-test duart_test.log                          # MC68681 vs MAME's register log
+python3 tools/sim.py cabio-test                                         # cabinet I/O link unit test
+python3 tools/inputscript.py play > inputs/play.txt                     # scripted inputs for both machines
+python3 tools/sim.py run --opt --ms 21000 --inputs inputs/play.txt --roms sim/build/roms/racedriv-cal
 ```
 
 The run prints one progress line per emulated millisecond and simulates

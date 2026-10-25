@@ -7,6 +7,7 @@
 //   +snd=<file>      sound 68000 EPROM image (index 1)        default index1.bin
 //   +trace=<file>    68010 bus trace output                    default none
 //   +ms=<n>          emulated milliseconds to run              default 100
+//   +inputs=<file>   cabinet input script (tools/inputscript.py), same file mame/inputs.lua replays
 //   +service=1       hold the self-test switch on
 //   +service_at=<ms> press it only from that time (MAME's Lua presses it on the first frame)
 //   +vcd=<file>      waveform dump (slow; needs --trace at build)
@@ -23,6 +24,12 @@ module tb_core;
 `endif
 `ifndef ASIC65_SIN_FILE
   `define ASIC65_SIN_FILE "rtl/asic65/asic65_sin.hex"
+`endif
+`ifndef DSK_ZRAM_HI_FILE
+  `define DSK_ZRAM_HI_FILE ""
+`endif
+`ifndef DSK_ZRAM_LO_FILE
+  `define DSK_ZRAM_LO_FILE ""
 `endif
   localparam bit COCKPIT = 1;
 
@@ -73,6 +80,7 @@ module tb_core;
     .ZERO_RAM_INIT_HI_FILE(`ZRAM_HI_FILE),
     .ZERO_RAM_INIT_LO_FILE(`ZRAM_LO_FILE),
     .ASIC65_SIN_FILE(`ASIC65_SIN_FILE),
+    .DSK_ZRAM_INIT_HI_FILE(`DSK_ZRAM_HI_FILE), .DSK_ZRAM_INIT_LO_FILE(`DSK_ZRAM_LO_FILE),
     .DSP32_RAM_LOG2(18)  // the board's 256 KiB, as MAME models it
   ) u_core (
     .clk_50_i(clk50), .rst_i(rst), .clk_core_o(clk_core), .ce_pix_o(ce_pix),
@@ -89,6 +97,8 @@ module tb_core;
     .calibration_active_o(cal_active),
     .coin1_i(coin1), .coin2_i(coin2), .service_i(service), .diag_jumper_i(diag_jumper),
     .duart_txa_o(), .duart_rxa_i(1'b1), .duart_txb_o(), .duart_rxb_i(1'b1),
+    .duart_tx_rate_a_o(), .duart_rx_rate_a_o(), .duart_tx_rate_b_o(), .duart_rx_rate_b_o(),
+    .force_byte_o(), .lamps_o(), .coin_counter_o(), .dsk_led_o(),
     .sw1_i(sw1), .compact_port1_i(compact_port1),
     .accelerator_i(accelerator), .clutch_i(clutch), .seat_i(seat),
     .shifter_x_i(shifter_x), .shifter_y_i(shifter_y), .brake_i(brake),
@@ -141,6 +151,52 @@ module tb_core;
     repeat (100) @(posedge clk50);
     rst <= 0;
     $display("tb_core: reset released at %t", $time);
+  end
+
+  // ---- cabinet input script ------------------------------------------------
+  // "time_s control value" lines (tools/inputscript.py); values are what the
+  // 68010 reads, so the 12-bit brake arrives as the ADC value itself.
+  function automatic logic [7:0] wheel8_of(input logic [11:0] w);
+    if (w <= 12'h010) return 8'h10;
+    if (w >= 12'hff0) return 8'hf0;
+    return 8'h10 + 8'((32'(w - 12'h010) * 32'd224) / 32'd4064);
+  endfunction
+  initial begin
+    string file, line, name;
+    int fd, n, applied = 0;
+    real t, tnow;
+    int v;
+    if ($value$plusargs("inputs=%s", file)) begin
+      fd = $fopen(file, "r");
+      if (fd == 0) begin $display("tb_core: cannot open inputs %s", file); $finish; end
+      while (!$feof(fd)) begin
+        if ($fgets(line, fd) == 0) break;
+        if (line.len() < 3 || line[0] == "#") continue;
+        n = $sscanf(line, "%f %s %d", t, name, v);
+        if (n != 3) continue;
+        tnow = $realtime / 1.0e12;
+        if (t > tnow) #((t - tnow) * 1.0e12);
+        case (name)
+          "coin1":   coin1 = v[0];
+          "coin2":   coin2 = v[0];
+          "service": service = v[0];
+          "abort":   compact_port1[0] = !v[0];
+          "key":     compact_port1[1] = !v[0];
+          "auxcoin": compact_port1[2] = !v[0];
+          "gas":     accelerator = v[7:0];
+          "clutch":  clutch = v[7:0];
+          "seat":    seat = v[7:0];
+          "shx":     shifter_x = v[7:0];
+          "shy":     shifter_y = v[7:0];
+          "wheel":   steering = v[11:0];
+          "brake":   brake12 = v[11:0];
+          default:   $display("tb_core: unknown input %s", name);
+        endcase
+        applied++;
+        if (applied <= 12 || name != "wheel") $display("tb_core: t=%.4f input %s = %0d", t, name, v);
+      end
+      $display("tb_core: %0d input events applied", applied);
+    end
   end
 
   // ---- NVRAM side port self-check (+nvramtest): both zero RAMs through the

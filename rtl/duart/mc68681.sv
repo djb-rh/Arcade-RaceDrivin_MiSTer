@@ -40,7 +40,12 @@ module mc68681 #(
   output logic       tx_b_o,
   input  logic       rx_b_i,
   input  logic [6:0] ip_i,          // IP0-IP6 (bit 7 reads as 1)
-  output logic [7:0] op_o           // OP0-OP7, as pins (inverted OPR)
+  output logic [7:0] op_o,          // OP0-OP7, as pins (inverted OPR)
+  // the programmed bit rates, for whatever serialises the lines outside
+  output logic [31:0] tx_a_rate_o,
+  output logic [31:0] rx_a_rate_o,
+  output logic [31:0] tx_b_rate_o,
+  output logic [31:0] rx_b_rate_o
 );
   // ---- global registers ------------------------------------------------------
   logic [7:0] acr_q, imr_q, isr_q, opcr_q, opr_q, ipcr_q, ivr_q;
@@ -95,6 +100,10 @@ module mc68681 #(
   wire [31:0] rxa_rate = baud_rate(acr_q[7], ca.csr[7:4]) << 4;
   wire [31:0] txb_rate = baud_rate(acr_q[7], cb.csr[3:0]);
   wire [31:0] rxb_rate = baud_rate(acr_q[7], cb.csr[7:4]) << 4;
+  assign tx_a_rate_o = txa_rate;
+  assign rx_a_rate_o = baud_rate(acr_q[7], ca.csr[7:4]);
+  assign tx_b_rate_o = txb_rate;
+  assign rx_b_rate_o = baud_rate(acr_q[7], cb.csr[7:4]);
   always_ff @(posedge clk_i) begin
     txa_tick <= 1'b0; rxa_tick <= 1'b0; txb_tick <= 1'b0; rxb_tick <= 1'b0;
     if (rst_i) begin txa_acc <= 0; rxa_acc <= 0; txb_acc <= 0; rxb_acc <= 0; end

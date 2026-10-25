@@ -26,7 +26,10 @@
 // Its PIF pin is the 68010's interrupt level 4.
 module harddrivin_dsk_board #(
   parameter ASIC65_SIN_FILE = "rtl/asic65/asic65_sin.hex",
-  parameter int DSP32_RAM_LOG2 = 17
+  parameter int DSP32_RAM_LOG2 = 17,
+  // development only: power-up images for the zero-power RAM (tools/nvram2hex.py)
+  parameter ZRAM_INIT_HI_FILE = "",
+  parameter ZRAM_INIT_LO_FILE = ""
 ) (
   input  logic        clk_i,
   input  logic        rst_i,
@@ -95,7 +98,8 @@ module harddrivin_dsk_board #(
     else if (!nvram_req_i) nvram_done_q <= 1'b0;
     nvram_dirty_o <= cpu_zram && we_i;
   end
-  harddrivin_lane_ram #(.ADDR_WIDTH(11), .INIT_ONES(1)) u_zram (
+  harddrivin_lane_ram #(.ADDR_WIDTH(11), .INIT_ONES(1),
+                        .INIT_HI_FILE(ZRAM_INIT_HI_FILE), .INIT_LO_FILE(ZRAM_INIT_LO_FILE)) u_zram (
     .clk_i(clk_i), .en_i(cpu_zram || nvram_go),
     .addr_i(cpu_zram ? addr_i[11:1] : nvram_addr_i[11:1]),
     .we_hi_i((cpu_zram && we_i && be_i[1]) || (nvram_go && nvram_we_i && !nvram_addr_i[0])),

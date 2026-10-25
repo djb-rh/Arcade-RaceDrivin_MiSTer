@@ -134,6 +134,9 @@ module harddrivin_milestone #(
   parameter        ZERO_RAM_INIT_LO_FILE = "",
   // ASIC65 sine table (tools/asic65_sintab.py), relative to the project.
   parameter        ASIC65_SIN_FILE = "rtl/asic65/asic65_sin.hex",
+  // Development only: DSK zero-power RAM power-up images (like the 200E/210E ones).
+  parameter        DSK_ZRAM_INIT_HI_FILE = "",
+  parameter        DSK_ZRAM_INIT_LO_FILE = "",
   // DSP32C RAM at 0x600000: 17 = 128 KiB (enough for the game), 18 = the board's 256 KiB
   parameter int    DSP32_RAM_LOG2 = 17,
   // 1: every diagnostic page is captured; 0: only pages 50-54 (GSP boot),
@@ -182,6 +185,14 @@ module harddrivin_milestone #(
   input  logic        duart_rxa_i,
   output logic        duart_txb_o,
   input  logic        duart_rxb_i,
+  output logic [31:0] duart_tx_rate_a_o,  // the DUART's programmed bit rates (cabinet link)
+  output logic [31:0] duart_rx_rate_a_o,
+  output logic [31:0] duart_tx_rate_b_o,
+  output logic [31:0] duart_rx_rate_b_o,
+  output logic [7:0]  force_byte_o,       // wheel motor command (0xb00000)
+  output logic [1:0]  lamps_o,            // seat lock, abort (control latch LC1, LC2)
+  output logic [1:0]  coin_counter_o,
+  output logic        dsk_led_o,
   input  logic        diag_jumper_i,   // port 0 bit 0 (DIAGN), 1 = off
   input  logic [7:0]  sw1_i,           // port 0 high byte: SW1 DIP switches, 1 = off
   input  logic [15:0] compact_port1_i,
@@ -2084,6 +2095,9 @@ module harddrivin_milestone #(
     .adc8_eoc_o(main_adc8_eoc), .duart_irq_o(main_duart_irq),
     .duart_txa_o(duart_txa_o), .duart_rxa_i(duart_rxa_i),
     .duart_txb_o(duart_txb_o), .duart_rxb_i(duart_rxb_i),
+    .duart_tx_rate_a_o(duart_tx_rate_a_o), .duart_rx_rate_a_o(duart_rx_rate_a_o),
+    .duart_tx_rate_b_o(duart_tx_rate_b_o), .duart_rx_rate_b_o(duart_rx_rate_b_o),
+    .coin_counter_o(coin_counter_o), .force_byte_o(force_byte_o),
     .watchdog_clear_o(main_watchdog_clear),
     .irq_clear_o(main_irq_clear),
     .control_latch_o(main_control_latch),
@@ -2129,7 +2143,10 @@ module harddrivin_milestone #(
   logic [7:0]  dsk_latch;
   logic        dsk_dsp_reset_n, dsk_dsp_halt_n, dsk_led, dsk_irq4, dsk_dsp_running;
   logic [23:0] dsk_dsp_pc;
-  harddrivin_dsk_board #(.ASIC65_SIN_FILE(ASIC65_SIN_FILE), .DSP32_RAM_LOG2(DSP32_RAM_LOG2)) u_dsk (
+  harddrivin_dsk_board #(
+    .ASIC65_SIN_FILE(ASIC65_SIN_FILE), .DSP32_RAM_LOG2(DSP32_RAM_LOG2),
+    .ZRAM_INIT_HI_FILE(DSK_ZRAM_INIT_HI_FILE), .ZRAM_INIT_LO_FILE(DSK_ZRAM_INIT_LO_FILE)
+  ) u_dsk (
     .clk_i(clk_gsp), .rst_i(rst_gsp),
     .req_i(dsk_host_req), .we_i(dsk_host_we), .addr_i(dsk_host_addr),
     .be_i(dsk_host_be), .wdata_i(dsk_host_wdata),
@@ -2141,8 +2158,10 @@ module harddrivin_milestone #(
     .dsp_halt_n_o(dsk_dsp_halt_n), .irq4_o(dsk_irq4), .led_o(dsk_led),
     .dsp_pc_o(dsk_dsp_pc), .dsp_running_o(dsk_dsp_running)
   );
+  assign dsk_led_o = dsk_led;
+  assign lamps_o   = main_control_latch[3:2];   // nwr functions 2 (LC1 seat lock) and 3 (LC2 abort)
   logic unused_dsk;
-  assign unused_dsk = ^{dsk_latch, dsk_dsp_reset_n, dsk_dsp_halt_n, dsk_led, dsk_dsp_pc, dsk_dsp_running};
+  assign unused_dsk = ^{dsk_latch, dsk_dsp_reset_n, dsk_dsp_halt_n, dsk_dsp_pc, dsk_dsp_running};
 
   // Two DDR read clients share the MiSTer port: the 68010 ROM (1 MiB at
   // 0x30000000) and the ADSP sequential EPROM image (256 KiB at
