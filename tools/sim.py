@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build and run the whole-core Verilator simulation.
 
-    tools/sim.py build [--stub-68010] [--trace-waves]
+    tools/sim.py build [--stub-68010] [--trace-waves] [--opt] [--threads N]
     tools/sim.py run --roms sim/build/roms/racedriv --ms 50 --trace sim/build/run/trace.txt [--service]
     tools/sim.py roms racedriv-cockpit ~/roms/racedriv.zip [--slapstic-free]   (wraps tools/romimage.py)
     tools/sim.py tg68k [--ghdl /path/to/ghdl]                                (VHDL -> Verilog, once)
@@ -90,7 +90,12 @@ def cmd_tg68k(args):
     print(f"wrote {out} ({text.count(chr(10))} lines); warnings in {out_dir / 'synth.log'}")
 
 
+def obj_dir(args):
+    return BUILD / ("obj-opt" if args.opt else "obj")
+
+
 def cmd_build(args):
+    OBJ = obj_dir(args)
     roms = Path(args.roms).resolve()
     hi, lo = roms / "zram_hi.hex", roms / "zram_lo.hex"
     if not (hi.exists() and lo.exists()):
@@ -135,9 +140,9 @@ def cmd_build(args):
 
 
 def cmd_run(args):
-    exe = OBJ / "Vtb_core"
+    exe = obj_dir(args) / "Vtb_core"
     if not exe.exists():
-        sys.exit("build first: tools/sim.py build")
+        sys.exit(f"build first: tools/sim.py build{' --opt' if args.opt else ''}")
     roms = Path(args.roms).resolve()
     plus = [f"+ddr={roms / 'ddr.bin'}", f"+snd={roms / 'index1.bin'}", f"+ms={args.ms}"]
     if args.trace:
@@ -176,7 +181,7 @@ def main():
     b.add_argument("--roms", default=str(BUILD / "roms" / "current"))
     b.add_argument("--stub-68010", action="store_true")
     b.add_argument("--trace-waves", action="store_true")
-    b.add_argument("--opt", action="store_true", help="-O3 (slower build, faster sim)")
+    b.add_argument("--opt", action="store_true", help="-O3 into sim/build/obj-opt (slower build, faster sim)")
     b.add_argument("--threads", type=int, default=1)
     b.add_argument("--jobs", type=int, default=min(8, os.cpu_count() or 1))
     b.set_defaults(func=cmd_build)
@@ -186,6 +191,7 @@ def main():
     r.add_argument("--trace")
     r.add_argument("--vcd")
     r.add_argument("--service", action="store_true")
+    r.add_argument("--opt", action="store_true", help="run the -O3 build")
     r.set_defaults(func=cmd_run)
     m = sub.add_parser("roms")
     m.add_argument("layout")
