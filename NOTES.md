@@ -496,3 +496,15 @@ Measured from the disassembly text in `~/Developer/rdp-fullscreen`
   Cytron MD, VESC) as in DIY FFB wheels.
 - **The compact's motor amp and wheel/pedal wiring are undocumented in our
   sources; measure on the cabinet.**
+
+## 6. The user's hardware (stated 2026-10-24)
+
+- Cabinets: **four Race Drivin' cockpit cabinets and one compact.** Both
+  cabinet types are deployment targets for the core and the cabinet board.
+- Bench video: an EGA-to-VGA converter board with a VGA monitor for the
+  cockpit (about 25 kHz), and a CGA LCD for the compact (about 18.6 kHz). So
+  both boards' native output from the analog I/O board can be viewed on the
+  bench without HDMI.
+- Local ROM sets: cockpit `racedriv` rev 5 (136077-5001..5006 plus the
+  Y2K 200r variant) and a slapstic-free cockpit set; compact rev 5 referenced
+  by the tools.

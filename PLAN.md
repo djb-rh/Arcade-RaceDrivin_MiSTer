@@ -8,12 +8,18 @@ MAME. Open decisions are collected in section 8.
 
 Build a MiSTer (DE10-Nano) core that runs Race Drivin' on both of its main
 boards: the cockpit (`racedriv`, A045988 "driver" board) and the compact
-(`racedrivc`, A046901 MultiSync board), program rev 5 in both cases. The
-compact build must run well enough to replace the Atari board stack in the
-user's real compact cabinet, with a custom I/O board that connects the
-cabinet's wheel (with force feedback), pedals, shifter, key, abort, coin
+(`racedrivc`, A046901 MultiSync board), program rev 5 in both cases. Both
+builds must run well enough to replace the Atari board stack in real
+cabinets: the user has **four cockpit cabinets and one compact**. A custom
+cabinet I/O board, with a variant or configuration for each cabinet type,
+connects the wheel (with force feedback), pedals, shifter, key, abort, coin
 door, self-test switch, coin counters and two RS-232 ports to the core.
 MAME's `harddriv` driver is the behavioural oracle throughout.
+
+Bench video: the user has an EGA-to-VGA converter with a VGA monitor for the
+cockpit's 25 kHz raster and a CGA LCD for the compact's 18.6 kHz raster, so
+both boards' native output from the analog I/O board can be checked on the
+bench without HDMI.
 
 Build order: **cockpit first, then compact.** The Hard Drivin' core's
 mature, released path is the cockpit; its compact path is marked
@@ -26,8 +32,9 @@ build switch (as the Hard Drivin' core already does with `HD_COCKPIT`)
 produces two RBFs and two MRAs.
 
 In scope now: cockpit and compact hardware with the user's slapstic-free ROM
-sets, USB controls for bench work, the cabinet I/O board for the compact.
-Later: stock-ROM slapstic, Panorama, link over Wi-Fi.
+sets, USB controls for bench work, the cabinet I/O board for both cabinet
+types, link play between cabinets (four cockpits make linked pairs the
+normal case). Later: stock-ROM slapstic, Panorama, link over Wi-Fi.
 
 Hard rules: no ROM data in the repository; every tool consumes MAME-style
 zips; the project is GPL-3.0-or-later (forced by the Hard Drivin' core).
@@ -246,13 +253,31 @@ ROMs.
 **Analog I/O board for video and sound, plus one custom "cabinet board" on
 the user port.** The cabinet board carries a small MCU and all cabinet
 electrical interfaces; the core talks to it over a framed serial protocol.
+One board design serves both cabinet types: the MCU firmware and the core's
+build switch select the cockpit or compact input set, and the wheel section
+is populated for a pot (cockpit) or a quadrature encoder (compact).
+
+Inputs by cabinet type, as the original boards see them:
+
+| | Cockpit (four cabinets) | Compact (one cabinet) |
+|---|---|---|
+| Wheel | 10-turn pot: 12-bit ADC ch 0 and an 8-bit copy on ADC0809 ch 5 (the game cross-checks them before enabling force feedback). The MCU samples the pot once at 12 bits; the core presents both readings from it | Quadrature encoder with centre index: counter at 0x400000, edge latch in port 1 bit 14 |
+| Brake | Pot on 12-bit ADC ch 1 | Force transducer on ADC0809 ch 6 (0xF0 released to 0x20) |
+| Gas, clutch | Pots on ADC0809 ch 0, 1 | Same |
+| Seat, shifter | Pots on ADC0809 ch 2 (seat), 3 (shifter Y), 4 (shifter X) | Four maintained gear switches, port 1 bits 8-11 |
+| Line volts | ADC0809 ch 6 (fixed value is fine) | none |
+| Switches | Key, abort, aux coin, coin 1/2, self-test, DIAGN | Same |
+| Outputs | Force byte at 0xB00000, coin counters, lamps (seat lock, abort) | Same |
+
+So the MCU needs at least eight 12-bit ADC channels, three quadrature
+inputs, about ten switch inputs and five outputs plus the motor drive.
 
 Pin budget on the 7 user-port lines (proposal):
 
 | Line | Use |
 |---|---|
 | USER_IO[0], [1] | Full-duplex UART to the MCU at 1-2 Mbaud: input frames (switches, pedal ADC values, wheel count or raw edges, link-present) at 1 kHz; output frames (force byte, lamps, coin-counter pulses, DSK LED) |
-| USER_IO[2], [3], [4] | Wheel quadrature A, B and index straight into the FPGA, so the core's 0x400000 counter is a real hardware counter like the original |
+| USER_IO[2], [3], [4] | Compact: wheel quadrature A, B and index straight into the FPGA, so the core's 0x400000 counter is a real hardware counter like the original. Cockpit: unused (the wheel pot arrives in the MCU frames) |
 | USER_IO[5], [6] | Serial A (link, J2) TX and RX as raw TTL, through a MAX3232 on the cabinet board, so link latency is identical to the original DUART |
 
 Serial B (J3, the side-pod stream, transmit-only in the user's patch) is
@@ -262,21 +287,26 @@ into the frames too and free two lines.
 
 Cabinet-board functions:
 
-- **Pedals**: gas and clutch pots and the force-brake transducer read by the
-  MCU's 12-bit ADC and sent as 8-bit values matching the ADC0809 ranges
-  (brake 0xF0 released to 0x20 full).
-- **Shifter and switches**: four maintained gear switches, key, abort, aux
-  coin, coin 1/2, self-test, DIAGN, all active low with pull-ups, debounced
-  on the MCU.
-- **Outputs**: two coin-counter drivers, two lamp drivers, DSK LED.
+- **Analog inputs**: all pots (cockpit wheel, brake, gas, clutch, seat,
+  shifter X/Y) and the compact's force-brake transducer read by the MCU's
+  12-bit ADC and sent at 12 bits; the core scales to the 8-bit ADC0809 or
+  12-bit ranges the game expects (brake transducer 0xF0 released to 0x20
+  full on the compact; 0x010-0xFF0 wheel range on the cockpit).
+- **Shifter and switches**: compact's four maintained gear switches; key,
+  abort, aux coin, coin 1/2, self-test, DIAGN; all active low with pull-ups,
+  debounced on the MCU.
+- **Outputs**: two coin-counter drivers, two lamp drivers (seat lock and
+  abort on the cockpit), DSK LED.
 - **Force feedback**: the MCU receives the 8-bit force byte every frame.
   Option F1 (faithful): drive the cabinet's original motor-amp board through
-  its latch interface, reproducing the game board's output signals (the
-  cockpit amp's interface is partly documented from the 044253-01 schematic;
-  the compact's must be measured in the cabinet). Option F2 (modern): a
-  sign-magnitude PWM H-bridge (BTS7960-class or a Suzo-Happ 50-2000-05
-  active-wheel driver) with a separate motor supply. Start with F1 if the
-  cabinet's amp works, F2 as the fallback.
+  its latch interface, reproducing the game board's output signals. The
+  cockpit amp (044253-01) is documented from Margolin's schematic apart from
+  the exact strobe protocol across its opto barrier, and with four cockpits
+  it is the primary target; the compact's amp must be measured in the
+  cabinet. Option F2 (modern): a sign-magnitude PWM H-bridge (BTS7960-class
+  or a Suzo-Happ 50-2000-05 active-wheel driver) with a separate motor
+  supply. Start with F1 on a cockpit, F2 as the fallback and for any
+  cabinet with a dead amp.
 - **RS-232**: two MAX3232 channels for J2 and J3 with the original pinout
   (TX pin 7, RX pin 6, GND 4/5), plus the "link present" sense on pin 11.
 - **Wi-Fi link bridge**: if the MCU is an ESP32-S3, the Serial A stream can
@@ -384,10 +414,16 @@ against the cabinet monitor. Second release candidate:
 `RaceDrivin_compact.rbf` plus MRA.
 
 **M7 — Cabinet board.**
-Frame protocol spec, KiCad board, MCU firmware, `rd_cabinet_io`. Bench with
-the real wheel, pedals and shifter on the desk, then force feedback against
-the cabinet's motor amp, then installation in the compact. Done when the
-cabinet plays with every control and the coin counters count.
+Frame protocol spec, KiCad board, MCU firmware, `rd_cabinet_io`, cockpit and
+compact input sets. Bench with real controls on the desk, then force feedback
+against a cockpit's motor amp, then installation in the first cockpit
+cabinet; then the compact (quadrature wheel, force brake, compact amp). Done
+when a cockpit and the compact each play with every control and the coin
+counters count. Linked play between two cockpit cabinets through the boards'
+J2 ports is part of this milestone's acceptance.
+
+This milestone can start its hardware design in parallel with M3-M6, since
+the board does not depend on the DSK work; only the final integration does.
 
 **M8 — Polish and stretch.**
 Cycle-accurate 68010 pacing; HDL slapstic for stock sets; Panorama centre and
@@ -452,8 +488,10 @@ releases/   RBF + MRA
    (simpler, no radio)?
 5. **Force feedback**: drive the cabinet's original motor amp (is it present
    and working? can we trace its interface?) or a modern H-bridge?
-6. **Monitor**: keep the compact CRT fed natively at about 18.6 kHz from the
-   analog board (needs a sync test), or an LCD via HDMI?
+6. **Monitors**: the cabinets keep their monitors, fed natively from the
+   analog board (cockpit about 25 kHz, compact about 18.6 kHz); each monitor
+   type needs one sync test. Bench viewing is covered by the EGA-to-VGA
+   converter (cockpit) and the CGA LCD (compact). Anything else wanted here?
 7. **Slapstic**: slapstic-free only (recommended now), HDL slapstic later?
 8. **Scope**: decided 2026-10-24: both boards, cockpit first then compact
    (section 0). Panorama remains a stretch goal.
