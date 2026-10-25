@@ -428,7 +428,11 @@ MAME log, and the boot sequence reaches the DSP32C upload.
   the full MC68681 (`rtl/duart/`, verified register for register against
   MAME with `mame/duart_test.lua` and `tools/sim.py duart-test`), the DSK
   zero-power RAM in an 8 KiB .nvm file, and MAME's ADC0808 conversion model
-  followed (NOTES.md section 9, "M2 leftovers").
+  followed (NOTES.md section 9, "M2 leftovers"). The self-test menu is
+  entered at MAME's program point and its first screen matches; the
+  checksum items need menu navigation inputs (M4). From here the 68010
+  comparison is limited by interrupt phase (`tracediff.py --resync`), i.e.
+  by 68010 pacing.
 
 **M3 — DSP32C core.**
 Standalone core in Verilator, lock-step against MAME instruction traces of the

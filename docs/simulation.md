@@ -82,7 +82,12 @@ One difference is tolerated and tallied: TG68K writes the high word of a
 long first, MAME's 68000 core the low word (MOVEM, PEA); memory ends up the
 same. `--timeline N` prints both machines' emulated time every N matching
 writes, which is how the 68010 pacing is compared (the sim runs the GSP
-download loop about 1.3x faster than MAME's 8 MHz 68010).
+download loop about 1.3x faster than MAME's 8 MHz 68010). `--resync N`
+tolerates an interrupt handler that ran at a different point on one side:
+on a mismatch it looks for the shortest skip on either side (or both) after
+which 24 writes match again, reports it, and goes on; the periodic 244 Hz
+interrupt causes one such skip every 4 ms once the two machines' timing has
+drifted apart.
 
 MAME-side gotchas (all fixed in `mame/oracle.lua`): `emu.register_stop` is
 gone in 0.289 (`emu.add_machine_stop_notifier`); a tap or log referenced

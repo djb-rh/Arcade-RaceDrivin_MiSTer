@@ -97,11 +97,15 @@ def main():
     ap.add_argument("--skip-rom", action="store_true", help="ignore writes below 0x100000")
     ap.add_argument("--timeline", type=int, default=0, metavar="N",
                     help="print sim and MAME time every N matching writes")
+    ap.add_argument("--resync", type=int, default=0, metavar="N",
+                    help="on a mismatch, skip up to N writes on either side to realign (an interrupt "
+                         "handler that ran at a different point); each skip is reported")
+    ap.add_argument("--max-resync", type=int, default=50, help="stop after this many resyncs")
     args = ap.parse_args()
     s = Peekable(sim_writes(args.sim_trace, args.skip_rom))
     m = Peekable(mame_writes(args.mame_writes, args.skip_rom))
     ctx_s, ctx_m = deque(maxlen=args.context), deque(maxlen=args.context)
-    i = swaps = 0
+    i = swaps = resyncs = 0
     last = None
     while True:
         a, b = s.peek(), m.peek()
@@ -121,6 +125,39 @@ def main():
                 ctx_s.append(s.pop()); ctx_m.append(m.pop())
             last = (ctx_s[-1], ctx_m[-1]); i += 2
             continue
+        if args.resync and resyncs < args.max_resync:
+            # look for the smallest skip (on either side, or both) after which
+            # 24 writes match again; interrupt handlers that ran at different
+            # points leave such inserted blocks on one side or the other
+            found = None
+            for total in range(1, 2 * args.resync + 1):
+                for ns in range(0, min(total, args.resync) + 1):
+                    nm = total - ns
+                    if nm > args.resync:
+                        continue
+                    ok = True
+                    for j in range(24):
+                        x, y = s.peek(ns + j), m.peek(nm + j)
+                        if x is None or y is None or key(x) != key(y):
+                            ok = False
+                            break
+                    if ok:
+                        found = (ns, nm)
+                        break
+                if found:
+                    break
+            if found:
+                ns, nm = found
+                desc = []
+                for side, src, n in (("sim", s, ns), ("mame", m, nm)):
+                    if n:
+                        skipped = [src.pop() for _ in range(n)]
+                        lo = min(w[0] for w in skipped); hi = max(w[0] for w in skipped)
+                        desc.append(f"{n} {side} writes in {lo:06x}-{hi:06x}")
+                print(f"  resync #{resyncs + 1} at write #{i} (sim {a[4]:.6f} s, mame {b[4]:.6f} s): skipped " + ", ".join(desc))
+                resyncs += 1
+                i += ns
+                continue
         print(f"FIRST MISMATCH at write #{i} (sim {a[4]:.6f} s, mame {b[4]:.6f} s)")
         print(f"{'#':>8} {'sim addr data u l':<24} {'mame addr data u l':<24}")
         for j, (x, y) in enumerate(zip(ctx_s, ctx_m)):
@@ -135,7 +172,7 @@ def main():
     s_more = s.peek() is not None
     m_more = m.peek() is not None
     tail = "" if not (s_more or m_more) else (" (sim has more)" if s_more else " (mame has more)")
-    print(f"first {i} writes identical, {swaps} long-write halves swapped{tail}")
+    print(f"first {i} writes identical, {swaps} long-write halves swapped, {resyncs} resyncs{tail}")
     if last:
         print(f"  at write #{i - 1}: sim {last[0][4]:.6f} s   mame {last[1][4]:.6f} s")
 

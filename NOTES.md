@@ -809,3 +809,26 @@ by lock-step against MAME instruction traces (`mame/dsp32-measure.patch`
   through the side port while the board is in reset: passes. Existing
   4 KiB .nvm files are read as the first half (the DSK half then powers up
   0xff, as a fresh chip would).
+- **Self-test menu**: MAME samples the self-test switch once the boot
+  tests are done (5.2375 s with the switch held from the first frame; the
+  service-mode and normal runs are identical until then), and the sim does
+  the same at the same program point (its own normal and service runs part
+  at the same write, `fffeb8 6f4e` against `6f7a`, followed by the same DSK
+  RAM and stack writes) at sim 3.760 s. From the two entry points the
+  write streams agree, interrupt phase aside, through the menu's first
+  screen. Running the ROM-checksum items (DSK, ASIC65) needs menu
+  navigation with the cabinet inputs, which is M4's scripted-input work;
+  nothing in the menu itself issued ASIC65 commands.
+- **Interrupt phase is now the limit of the 68010 comparison.** With the
+  ADC model in place the normal run matches to write 1,069,120 (MAME
+  1.968 s), where MAME's periodic level-5 interrupt lands on a different
+  instruction than the sim's: the handler's stack frame and its 200-odd
+  writes appear at a different point in the stream, after which both
+  continue identically. `tracediff.py --resync N` skips such inserted
+  blocks on either side (reporting each) and the comparison then runs on,
+  with one resync every 4 ms, which is the 244 Hz interrupt. The sim is
+  also ahead of MAME by a growing margin (1.77 s against 1.97 s at that
+  point, 3.76 s against 5.24 s at the self-test sample): the 68010 runs
+  about 10% fast and the boot's timed waits run short. Cycle-faithful 68010
+  pacing (PLAN.md, later) is what would make the plain comparison hold
+  through the attract mode.
