@@ -21,6 +21,7 @@ Quartus, so milestones M1-M3 can be verified on the Mac.
 | `tools/tracediff.py` | compares the sim's 68010 write sequence with MAME's (`mame/oracle.lua`, `RD_BUSWRITES=1`) |
 | `sim/tb_asic65.sv` | replays a MAME `.asic65.log` through the ASIC65 model and checks every result (`tools/sim.py asic65-test`) |
 | `tools/asic65_sintab.py` | generates and self-checks the ASIC65 SIN/COS table `rtl/asic65/asic65_sin.hex` |
+| `tools/slapstic_trace.py` | replays a sim bus trace through the 137412-117 model and prints its bank switches |
 
 Everything generated lives under `sim/build/` (gitignored). ROM images never
 enter the repository.
@@ -91,12 +92,12 @@ without the stop notifier.
 ## How far the comparison goes
 
 With the stock cockpit set the write sequence matches MAME from reset to
-the first read through the slapstic window (930,458 writes, MAME 1.585 s):
-the DSK board's RAM, zero-power RAM, track ROM window, control latch and
-ASIC65 are all in the comparison. The core has no slapstic (the cabinets
-run slapstic-free ROMs), so from there MAME's bank 1 and the core's flat
-ROM differ; the DSP32C upload starts 15 ms later. NOTES.md sections 8 and 9
-have the details.
+the program's test of the DSP32C parallel port (930,594 writes, MAME
+1.5846 s): the GSP download, the DSK board's RAM, zero-power RAM, track ROM
+window, control latch and ASIC65, and the slapstic's bank test are all in
+the comparison. The DSP32C is M3; until then the core answers its PIO with
+zeros and the program loops on the test. NOTES.md sections 8 and 9 have the
+details.
 
 ## Gotchas found so far
 

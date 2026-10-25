@@ -11,6 +11,9 @@ module harddrivin_main_bus #(
   parameter bit COCKPIT = 0,
   // 1: Race Drivin' DSK board decode (0x85cxxx I/O, 0x9xxxxx RAM/ROM).
   parameter bit DSK = 1,
+  // 1: 137412-117 slapstic banking 0x0e0000-0x0fffff (stock ROM sets);
+  //    0: flat ROM there (slapstic-free sets, chip pulled and jumpered).
+  parameter bit SLAPSTIC = 1,
   // Development only: preload the battery-backed settings RAM (zero-power
   // RAM, 0xff4000-0xff4fff) so the ROM boots as a calibrated cabinet.  A
   // release must leave these empty and require the player's calibration.
@@ -158,6 +161,9 @@ module harddrivin_main_bus #(
   logic dsk_select;
   logic dsk_rom_select;
   logic [20:1] rom_word_addr;
+  logic        slapstic_window;
+  logic [1:0]  slapstic_bank;
+  logic        slapstic_access;
   logic duart_select;
   logic snd_select;
   logic snd_data_select;
@@ -257,8 +263,21 @@ module harddrivin_main_bus #(
   assign dsk_select = DSK && ((addr_i[23:12] == 12'h85c) ||
                               (addr_i[23:20] == 4'h9 && addr_i[19:18] == 2'b00));
   assign dsk_rom_select = DSK && (addr_i[23:20] == 4'h9) && (addr_i[19:18] != 2'b00);
-  assign rom_word_addr = dsk_rom_select ? (20'hd0000 + {3'b000, addr_i[17:1]})
-                                        : {1'b0, addr_i[19:1]};
+  // Slapstic window: four 32 KiB banks of the 200Y/210Y pair (ROM bytes
+  // 0xe0000-0xfffff) appear at 0xe0000-0xe7fff and its three mirrors.
+  assign slapstic_window = SLAPSTIC && (addr_i[23:17] == 7'h07);
+  assign rom_word_addr = dsk_rom_select  ? (20'hd0000 + {3'b000, addr_i[17:1]})
+                       : slapstic_window ? {4'b0111, slapstic_bank, addr_i[14:1]}
+                                         : {1'b0, addr_i[19:1]};
+  // The chip sees every CPU bus cycle (fetch, read, write), once, when the
+  // bus dispatches it; MAME's tap runs after the access, so the ROM address
+  // above uses the bank before this cycle's update.
+  assign slapstic_access = (cycle_i != done_cycle_q) && !rom_pending_q && !local_pending_q &&
+                           !host_pending_q && !adsp_pending_q && !dsk_pending_q && active_cycle;
+  harddrivin_slapstic u_slapstic (
+    .clk_i(clk_i), .rst_i(rst_i), .access_i(slapstic_access),
+    .addr_i(addr_i[23:0]), .bank_o(slapstic_bank)
+  );
   // MC68681 DUART at 0xff0000-0xff001f on the upper byte lane (MAME umask
   // 0xff00).  Only the counter/timer is modelled: the game programs ACR =
   // 0x30 (counter mode, X1/16 = 230.4 kHz), preloads 0xffff, starts it and

@@ -82,7 +82,7 @@ multisync_nomsp + adsp + dsk + sound` versus Hard Drivin' compact
    instance on either build.
 2. The slapstic 137412-117 is present in Race Drivin' (Hard Drivin' deletes
    it with the MSP). With the slapstic-free set, 0x0E0000-0x0FFFFF decodes as
-   flat ROM. Stock ROMs would need an HDL slapstic.
+   flat ROM; stock ROMs go through the HDL 137412 (`SLAPSTIC` parameter).
 3. Add the DSK board: DSP32C at 40 MHz with 8 KiB + 256 KiB + 2 KiB RAM,
    reached from the 68010 only through its PIO at 0x85C000; DSK control
    latch at 0x85C800 (DSP reset, DSP halt, ASIC65 reset, LED); 64 KiB DSK
@@ -184,15 +184,18 @@ suggests the part has an executable ROM that could one day be read).
 
 ### 2.3 Slapstic 137412-117
 
-Chosen option: **slapstic-free patched ROMs first**. The user's
+Chosen option: **both**. The HDL 137412 (`rtl/slapstic/`, from MAME's
+`slapstic.cpp`) is in the core since 2026-10-25 so stock sets boot and the
+MAME comparison keeps running on the stock set; `SLAPSTIC=0` gives the flat
+window for the slapstic-free sets, which remain the cabinets' ROMs. The
+original reasoning, kept for the record: **slapstic-free patched ROMs first**. The user's
 `rdtrack.stockcar --slapstic free` produces a compact set in which the Y
 window is read linearly, the chip-probe halt is skipped and the self-test
 checksums read flat windows. The core then needs plain ROM at
 0x0E0000-0x0FFFFF and nothing else. The MRA will reference the patched set
 with no CRC enforcement so users can build it themselves with the user's
-tools. Stretch goal: an HDL 137412-117 (MAME `slapstic.cpp` has the whole
-algorithm; a few hundred lines) so stock sets work; it slots into the same
-ROM-window decode.
+tools. The HDL 137412-117 turned out to be about a hundred lines and slots
+into the ROM-window decode as expected.
 
 ### 2.4 GSP timing and throughput
 
@@ -419,10 +422,11 @@ MAME log, and the boot sequence reaches the DSP32C upload.
   for 930,458 writes, up to the point where the program reads through the
   slapstic (MAME bank 1, core flat ROM) at MAME 1.585 s, 15 ms before the
   DSP32C upload. The ASIC65 model reproduces all 151 results in a 20 s MAME
-  log (`tools/sim.py asic65-test`). Still to do for M2: IRQ 4 plumbing, the
-  full 68681, DSK zero-power RAM save, self-test checksums; and to see the
-  DSP32C upload in the comparison, either the slapstic-free set on both
-  sides or an HDL 137412 (NOTES.md section 9).
+  log (`tools/sim.py asic65-test`). Later the same day the HDL 137412
+  slapstic went in and the comparison reached the DSP32C PIO test (930,594
+  writes, MAME 1.5846 s), M2's end point. Still to do for M2: IRQ 4
+  plumbing, the full 68681, DSK zero-power RAM save, self-test checksums
+  (NOTES.md section 9).
 
 **M3 — DSP32C core.**
 Standalone core in Verilator, lock-step against MAME instruction traces of the
@@ -541,8 +545,9 @@ Decided 2026-10-24 with the user:
    board (cockpit about 25 kHz, compact about 18.6 kHz), one sync test per
    monitor type. Bench viewing: EGA-to-VGA converter (cockpit), CGA LCD
    (compact).
-7. **Slapstic**: slapstic-free sets only for now; HDL slapstic is an M8
-   stretch goal. Assumed.
+7. **Slapstic**: the HDL 137412 is in the core (stock sets boot, MAME
+   comparison stays on the stock set); the cabinets keep their slapstic-free
+   ROMs, which run with `SLAPSTIC=0`.
 8. **Scope**: both boards, cockpit first then compact; Panorama is a
    stretch goal.
 9. **Upstream**: fork quietly for now under GPL-3.0-or-later with full

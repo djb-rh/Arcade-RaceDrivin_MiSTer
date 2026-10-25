@@ -681,3 +681,35 @@ the main bus from DDR (byte offset 0x1A0000, MRA index 0), repeating every
 - **Pacing**: the sim reaches the slapstic point 5.7% earlier than MAME
   (1.494 s vs 1.585 s) against 4.2% at the first DSK access; the DSK
   accesses themselves take two to five 48 MHz clocks.
+
+### Slapstic 137412-117 in the core (same day)
+
+`rtl/slapstic/harddrivin_slapstic.sv` follows MAME's `slapstic.cpp` for
+the 111-118 class (chip parameters as module parameters, 117 defaults). The
+main bus feeds it every CPU bus cycle it dispatches (fetch, read, write)
+and maps 0x0E0000-0x0FFFFF to `{bank, A14:A1}` of the 200Y/210Y pair; the
+access that switches the bank still reads the old bank, as MAME's tap does.
+`SLAPSTIC=0` on `harddrivin_main_bus` gives the flat window the
+slapstic-free sets need.
+
+- **Result: the write sequence matches MAME from reset to the DSP32C PIO
+  test**, 930,594 writes, sim 1.4941 s, MAME 1.5846 s. The divergence is
+  now the program's test of the DSP32C parallel port: PCR (0x85C00E) =
+  0x1A1A, 0x85C014 = 0x0202, 0x85C016 = 0, PAR (0x85C000) = 0x5432,
+  0x85C016 = 0 again, then PAR read back expecting 0x5433 (MAME returns
+  `m_par | 1`); the placeholder answers 0 and the program repeats the
+  write sequence forever. This is M2's end point and M3's start. The PIO
+  register index is A4:A1 (0x85C000 + 2 x reg).
+- What the game does with the slapstic in the first 4 s (MAME `-log`,
+  `tools/slapstic_trace.py` on the sim trace agrees event for event):
+  only direct switches. An arming read of 0x0E0000, then a read of
+  0x0E0010/0x0E0034/0x0E0058/0x0E007C selects bank 0/1/2/3. The boot test
+  at PC 0x27D88-0x27DA4 cycles banks 0,0,...,1,1,2,2,3,3 and the byte-copy
+  loop that first diverged runs with bank 1. Instruction fetches at
+  addresses ending in 0xFA (e.g. 0x027EFA) match the "alt start" pattern
+  (A7:A1 = 0x7D, anywhere in the map) and the next fetch breaks the
+  sequence; harmless, and MAME logs the same. No alternate or additive
+  commit occurs before 4 s.
+- MAME quirk kept: in the additive sequence the +1 pattern (mask 0x3E62,
+  value 0x1A42) also matches the exact end address 0x1A42, and MAME tests
+  +1 first, so an access to 0x1A42 adds 1 instead of ending the sequence.
