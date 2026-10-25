@@ -1,8 +1,8 @@
 diff --git a/src/devices/cpu/dsp32/dsp32.cpp b/src/devices/cpu/dsp32/dsp32.cpp
-index f674d0fe..f3a13dab 100644
+index f674d0fe..541c85d7 100644
 --- a/src/devices/cpu/dsp32/dsp32.cpp
 +++ b/src/devices/cpu/dsp32/dsp32.cpp
-@@ -34,6 +34,77 @@
+@@ -34,6 +34,121 @@
  
  #include "endianness.h"
  
@@ -14,6 +14,8 @@ index f674d0fe..f3a13dab 100644
 +
 +#include <cstdlib>
 +#include <cstdio>
++#include <cstring>
++#include <string>
 +#include <vector>
 +
 +namespace {
@@ -29,6 +31,20 @@ index f674d0fe..f3a13dab 100644
 +	std::vector<uint64_t> page_wr;
 +	uint64_t rd_count = 0, wr_count = 0;
 +	uint64_t pio_rd = 0, pio_wr = 0;
++
++	// RD_DSP32TRACE: per-instruction state deltas for lock-step comparison
++	// with the FPGA core (rd-mister sim/tb_dsp32.sv).  RD_DSP32TRACE_FROM
++	// and RD_DSP32TRACE_COUNT select an instruction window; the first traced
++	// instruction carries the full state and a memory image (<file>.mem).
++	FILE *tf = nullptr;
++	bool trace_enabled = false, tracing = false, trace_started = false;
++	uint64_t trace_from = 0, trace_count = ~0ull, traced = 0;
++	bool trace_arm_dau = false;          // RD_DSP32TRACE_DAU=1: start at the first DAU instruction
++	int depth = 0;                       // execute_one nesting (delay slots)
++	uint32_t t_r[32]; double t_a[4]; uint32_t t_nzc = 0, t_v = 0; uint8_t t_vu = 0; uint64_t t_nz = 0;
++	uint16_t t_pio[9]; int t_lastp = 0;
++	struct wr { uint32_t addr, data; int size; };
++	std::vector<wr> writes;
 +};
 +rd_dsp32log_state rdlog;
 +
@@ -44,6 +60,25 @@ index f674d0fe..f3a13dab 100644
 +	rdlog.page_rd.assign(1 << 14, 0);
 +	rdlog.page_wr.assign(1 << 14, 0);
 +	std::fprintf(rdlog.f, "# RD_DSP32LOG v1\n");
++}
++
++void rd_dsp32trace_open()
++{
++	const char *path = std::getenv("RD_DSP32TRACE");
++	if (!path || !*path) return;
++	rdlog.tf = std::fopen(path, "w");
++	if (!rdlog.tf) return;
++	rdlog.trace_enabled = true;
++	if (const char *v = std::getenv("RD_DSP32TRACE_FROM")) rdlog.trace_from = std::strtoull(v, nullptr, 0);
++	if (const char *v = std::getenv("RD_DSP32TRACE_COUNT")) rdlog.trace_count = std::strtoull(v, nullptr, 0);
++	if (const char *v = std::getenv("RD_DSP32TRACE_DAU")) rdlog.trace_arm_dau = (*v == '1');
++	std::fprintf(rdlog.tf, "# RD_DSP32TRACE v1 from=%llu count=%llu\n",
++		(unsigned long long)rdlog.trace_from, (unsigned long long)rdlog.trace_count);
++}
++
++inline void rd_dsp32trace_write(offs_t addr, int size, uint32_t data)
++{
++	if (rdlog.tracing) rdlog.writes.push_back({addr, data, size});
 +}
 +
 +inline void rd_dsp32log_mem(offs_t addr, int bytes, bool write)
@@ -74,23 +109,43 @@ index f674d0fe..f3a13dab 100644
 +	rdlog.f = nullptr;
 +	rdlog.enabled = false;
 +}
++
++void rd_dsp32trace_close()
++{
++	if (!rdlog.tf) return;
++	std::fprintf(rdlog.tf, "# end traced=%llu\n", (unsigned long long)rdlog.traced);
++	std::fclose(rdlog.tf);
++	rdlog.tf = nullptr;
++	rdlog.trace_enabled = rdlog.tracing = false;
++}
 +} // anonymous namespace
 +
 +
  
  //**************************************************************************
  //  DEBUGGING
-@@ -187,6 +258,9 @@ dsp32c_device::dsp32c_device(const machine_config &mconfig, const char *tag, dev
+@@ -187,6 +302,12 @@ dsp32c_device::dsp32c_device(const machine_config &mconfig, const char *tag, dev
  
  void dsp32c_device::device_start()
  {
 +	rd_dsp32log_open();
 +	if (rdlog.enabled)
 +		machine().add_notifier(MACHINE_NOTIFY_EXIT, machine_notify_delegate([] () { rd_dsp32log_close(); }));
++	rd_dsp32trace_open();
++	if (rdlog.trace_enabled)
++		machine().add_notifier(MACHINE_NOTIFY_EXIT, machine_notify_delegate([] () { rd_dsp32trace_close(); }));
  	// get our address spaces
  	space(AS_PROGRAM).cache(m_cache);
  	space(AS_PROGRAM).specific(m_program);
-@@ -416,11 +490,13 @@ inline uint32_t dsp32c_device::ROPCODE(offs_t pc)
+@@ -271,6 +392,7 @@ void dsp32c_device::device_start()
+ 
+ void dsp32c_device::device_reset()
+ {
++	if (rdlog.tracing) std::fprintf(rdlog.tf, "X %llu\n", (unsigned long long)rdlog.instructions);
+ 	// reset goes to 0
+ 	PC = 0;
+ 
+@@ -416,11 +538,14 @@ inline uint32_t dsp32c_device::ROPCODE(offs_t pc)
  
  inline uint8_t dsp32c_device::RBYTE(offs_t addr)
  {
@@ -101,10 +156,11 @@ index f674d0fe..f3a13dab 100644
  inline void dsp32c_device::WBYTE(offs_t addr, uint8_t data)
  {
 +	rd_dsp32log_mem(addr, 1, true);
++	rd_dsp32trace_write(addr, 1, data);
  	m_program.write_byte(addr, data);
  }
  
-@@ -430,6 +506,7 @@ inline uint16_t dsp32c_device::RWORD(offs_t addr)
+@@ -430,6 +555,7 @@ inline uint16_t dsp32c_device::RWORD(offs_t addr)
  	if (!WORD_ALIGNED(addr))
  		osd_printf_error("Unaligned word read @ %06X, PC=%06X\n", addr, PC);
  #endif
@@ -112,7 +168,7 @@ index f674d0fe..f3a13dab 100644
  	return m_program.read_word(addr);
  }
  
-@@ -439,6 +516,7 @@ inline uint32_t dsp32c_device::RLONG(offs_t addr)
+@@ -439,6 +565,7 @@ inline uint32_t dsp32c_device::RLONG(offs_t addr)
  	if (!DWORD_ALIGNED(addr))
  		osd_printf_error("Unaligned long read @ %06X, PC=%06X\n", addr, PC);
  #endif
@@ -120,23 +176,25 @@ index f674d0fe..f3a13dab 100644
  	return m_program.read_dword(addr);
  }
  
-@@ -448,6 +526,7 @@ inline void dsp32c_device::WWORD(offs_t addr, uint16_t data)
+@@ -448,6 +575,8 @@ inline void dsp32c_device::WWORD(offs_t addr, uint16_t data)
  	if (!WORD_ALIGNED(addr))
  		osd_printf_error("Unaligned word write @ %06X, PC=%06X\n", addr, PC);
  #endif
 +	rd_dsp32log_mem(addr, 2, true);
++	rd_dsp32trace_write(addr, 2, data);
  	m_program.write_word(addr, data);
  }
  
-@@ -457,6 +536,7 @@ inline void dsp32c_device::WLONG(offs_t addr, uint32_t data)
+@@ -457,6 +586,8 @@ inline void dsp32c_device::WLONG(offs_t addr, uint32_t data)
  	if (!DWORD_ALIGNED(addr))
  		osd_printf_error("Unaligned long write @ %06X, PC=%06X\n", addr, PC);
  #endif
 +	rd_dsp32log_mem(addr, 4, true);
++	rd_dsp32trace_write(addr, 4, data);
  	m_program.write_dword(addr, data);
  }
  
-@@ -485,6 +565,8 @@ void dsp32c_device::set_irq_line(int irqline, int state)
+@@ -485,6 +616,8 @@ void dsp32c_device::set_irq_line(int irqline, int state)
  
  void dsp32c_device::update_pcr(uint16_t newval)
  {
@@ -145,7 +203,7 @@ index f674d0fe..f3a13dab 100644
  	uint16_t oldval = m_pcr;
  	m_pcr = newval;
  
-@@ -691,6 +773,11 @@ void dsp32c_device::pio_w(int reg, int data)
+@@ -691,6 +824,12 @@ void dsp32c_device::pio_w(int reg, int data)
  {
  	uint16_t mask;
  	uint8_t mode;
@@ -154,13 +212,15 @@ index f674d0fe..f3a13dab 100644
 +		rdlog.pio_wr++;
 +		std::fprintf(rdlog.f, "PIOW t=%.6f reg=%d data=%04X pcr=%04X\n", machine().time().as_double(), reg, data & 0xffff, m_pcr);
 +	}
++	if (rdlog.tracing) std::fprintf(rdlog.tf, "PW %llu %d %04X\n", (unsigned long long)rdlog.instructions, reg, data & 0xffff);
  
  	// look up register and mask
  	mode = ((m_pcr >> 8) & 2) | ((m_pcr >> 1) & 1);
-@@ -773,6 +860,11 @@ int dsp32c_device::pio_r(int reg)
+@@ -773,6 +912,12 @@ int dsp32c_device::pio_r(int reg)
  {
  	uint16_t mask, result = 0xffff;
  	uint8_t mode, shift = 0;
++	const int host_reg = reg;
 +	if (rdlog.enabled)
 +	{
 +		rdlog.pio_rd++;
@@ -169,14 +229,120 @@ index f674d0fe..f3a13dab 100644
  
  	// look up register and mask
  	mode = ((m_pcr >> 8) & 2) | ((m_pcr >> 1) & 1);
+@@ -838,5 +983,6 @@ int dsp32c_device::pio_r(int reg)
+ 			break;
+ 	}
+ 
++	if (rdlog.tracing) std::fprintf(rdlog.tf, "PR %llu %d %04X\n", (unsigned long long)rdlog.instructions, host_reg, ((result >> shift) & ~mask) & 0xffff);
+ 	return (result >> shift) & ~mask;
+ }
+diff --git a/src/devices/cpu/dsp32/dsp32.h b/src/devices/cpu/dsp32/dsp32.h
+index 4f9f3f9b..5d88d2e7 100644
+--- a/src/devices/cpu/dsp32/dsp32.h
++++ b/src/devices/cpu/dsp32/dsp32.h
+@@ -141,6 +141,7 @@ protected:
+ 	void illegal(uint32_t op);
+ 	void unimplemented(uint32_t op);
+ 	void execute_one();
++	void rd_trace_instruction(uint32_t op);
+ 
+ 	// CAU helpers
+ 	uint32_t cau_read_pi_special(uint8_t i);
 diff --git a/src/devices/cpu/dsp32/dsp32ops.hxx b/src/devices/cpu/dsp32/dsp32ops.hxx
-index 5a02393c..f8a0140b 100644
+index 5a02393c..bbf47e10 100644
 --- a/src/devices/cpu/dsp32/dsp32ops.hxx
 +++ b/src/devices/cpu/dsp32/dsp32ops.hxx
-@@ -129,6 +129,17 @@ inline void dsp32c_device::execute_one()
+@@ -119,6 +119,80 @@ void dsp32c_device::unimplemented(uint32_t op)
+ }
+ 
+ 
++// Emit one instruction record for RD_DSP32TRACE: the state changes since the
++// previous record (so everything the previous instruction and any host PIO
++// access did, including deferred DAU memory writes just processed), then the
++// instruction about to execute.  Lines:
++//   I <n> <pc> <op>        n = instructions executed before this one
++//   R <idx> <hex>          CAU register m_r[idx] (15 = PC, 26 = DAUC ...)
++//   A <idx> <hex16>        accumulator as IEEE double bits
++//   F <nzc> <v> <vu> <nz>  CAU nzcflags, vflags, DAU VU flags, DAU NZ value (double bits)
++//   P <par> <pare> <pdr> <pdr2> <pir> <pcr> <emr> <esr> <pcw>
++//   L <lastp>              DAU Z-inherits-from-Y pointer register
++//   W <size> <addr> <data> memory write performed since the last record
++//   M <file>               memory image (first record only)
++//   PW/PR <n> <reg> <data> host PIO write / read (from pio_w/pio_r)
++//   X <n>                  device reset
++void dsp32c_device::rd_trace_instruction(uint32_t op)
++{
++	auto &t = rdlog;
++	if (!t.tracing)
++	{
++		if (t.trace_started || t.instructions < t.trace_from) return;
++		// start only where the FPGA core can be initialised from the record:
++		// not in a delay slot, no deferred DAU memory write pending, no
++		// accumulator write still inside the multiplier/flag latency window
++		if (t.depth != 0) return;
++		for (int i = 0; i < 4; i++)
++			if (m_mbufaddr[i] != 1 || m_icount >= m_abufcycle[i] - 3 * 4) return;
++		if (t.trace_arm_dau && ((op >> 21) < 0x100 || (op >> 21) > 0x3ff)) return;
++		t.tracing = t.trace_started = true;
++		std::string memname = std::string(std::getenv("RD_DSP32TRACE")) + ".mem";
++		if (FILE *mf = std::fopen(memname.c_str(), "wb"))
++		{
++			// 8 KiB at 0, 256 KiB at 0x600000, 2 KiB at 0xfff800, little-endian bytes
++			for (uint32_t a = 0; a < 0x2000; a++) std::fputc(m_program.read_byte(a), mf);
++			for (uint32_t a = 0x600000; a < 0x640000; a++) std::fputc(m_program.read_byte(a), mf);
++			for (uint32_t a = 0xfff800; a < 0x1000000; a++) std::fputc(m_program.read_byte(a), mf);
++			std::fclose(mf);
++		}
++		std::fprintf(t.tf, "M %s\n", memname.c_str());
++		// force every field out on the first record
++		for (int i = 0; i < 32; i++) t.t_r[i] = ~m_r[i];
++		for (int i = 0; i < 4; i++) t.t_a[i] = m_a[i] + 1.0;
++		t.t_nzc = ~m_nzcflags; t.t_v = ~m_vflags; t.t_vu = ~m_VUflags; t.t_nz = ~0ull;
++		for (int i = 0; i < 9; i++) t.t_pio[i] = 0xdead;
++		t.t_lastp = -1;
++		t.writes.clear();
++	}
++	std::fprintf(t.tf, "I %llu %06X %08X\n", (unsigned long long)t.instructions, PC, op);
++	for (int i = 0; i < 32; i++)
++		if (m_r[i] != t.t_r[i]) { std::fprintf(t.tf, "R %d %08X\n", i, m_r[i]); t.t_r[i] = m_r[i]; }
++	for (int i = 0; i < 4; i++)
++		if (std::memcmp(&m_a[i], &t.t_a[i], 8) != 0)
++		{
++			uint64_t bits; std::memcpy(&bits, &m_a[i], 8);
++			std::fprintf(t.tf, "A %d %016llX\n", i, (unsigned long long)bits); t.t_a[i] = m_a[i];
++		}
++	uint64_t nzbits; std::memcpy(&nzbits, &m_NZflags, 8);
++	if (m_nzcflags != t.t_nzc || m_vflags != t.t_v || m_VUflags != t.t_vu || nzbits != t.t_nz)
++	{
++		std::fprintf(t.tf, "F %08X %08X %X %016llX\n", m_nzcflags, m_vflags, m_VUflags, (unsigned long long)nzbits);
++		t.t_nzc = m_nzcflags; t.t_v = m_vflags; t.t_vu = m_VUflags; t.t_nz = nzbits;
++	}
++	uint16_t pio[9] = { m_par, m_pare, m_pdr, m_pdr2, m_pir, m_pcr, m_emr, m_esr, m_pcw };
++	if (std::memcmp(pio, t.t_pio, sizeof(pio)) != 0)
++	{
++		std::fprintf(t.tf, "P %04X %02X %04X %04X %04X %04X %04X %04X %04X\n", pio[0], pio[1], pio[2], pio[3], pio[4], pio[5], pio[6], pio[7], pio[8]);
++		std::memcpy(t.t_pio, pio, sizeof(pio));
++	}
++	if (m_lastp != t.t_lastp) { std::fprintf(t.tf, "L %d\n", m_lastp); t.t_lastp = m_lastp; }
++	for (auto &w : t.writes) std::fprintf(t.tf, "W %d %06X %0*X\n", w.size, w.addr, w.size * 2, w.data);
++	t.writes.clear();
++	if (++t.traced >= t.trace_count) { t.tracing = false; rd_dsp32trace_close(); }
++}
++
++
+ inline void dsp32c_device::execute_one()
+ {
+ 	uint32_t op;
+@@ -127,10 +201,27 @@ inline void dsp32c_device::execute_one()
+ 	m_ppc = PC;
+ 	debugger_instruction_hook(PC);
  	op = ROPCODE(PC);
++	if (rdlog.trace_enabled)
++		rd_trace_instruction(op);
  	m_icount -= 4;  // 4 clocks per cycle
  	PC += 4;
++	if (rdlog.trace_enabled && !rdlog.enabled)
++		rdlog.instructions++;
 +	if (rdlog.enabled)
 +	{
 +		rdlog.instructions++;
@@ -188,6 +354,10 @@ index 5a02393c..f8a0140b 100644
 +			rdlog.next_mark += 100000;
 +		}
 +	}
++	rdlog.depth++;
  	if (op)
  		(this->*s_dsp32ops[op >> 21])(op);
++	rdlog.depth--;
  }
+ 
+ 

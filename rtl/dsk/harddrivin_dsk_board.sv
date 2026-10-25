@@ -1,8 +1,8 @@
 `default_nettype none
 
-// Race Drivin' DSK board as the 68010 sees it, without the DSP32C (M2):
+// Race Drivin' DSK board as the 68010 sees it:
 //
-//   0x85c000-0x85c7ff  DSP32C parallel I/O (PIO) registers   placeholder, M3
+//   0x85c000-0x85c7ff  DSP32C parallel I/O (PIO) registers, A4:A1 = register
 //   0x85c800-0x85c81f  control latch, 74LS259: A3:A1 function, A4 value
 //                      0 DSPRESTN  1 DSPZN (halt)  2 ZW1  3 ZW2
 //                      4 ASIC65 reset (0 = held)   7 LED
@@ -17,9 +17,16 @@
 // unmapped bus does.  MAME ignores the ZW1/ZW2 write-protect bits for the
 // DSK zero-power RAM and so does this module.  One access at a time: the
 // request is held until ack_o pulses; RAM and latch accesses take two
-// clocks, an ASIC65 result read five.
+// clocks, an ASIC65 result read five, a PIO access until the DSP32C is
+// between instructions.
+//
+// The DSP32C (rtl/dsp32c) runs here with its own RAM: 8 KiB, 2^DSP32_RAM_LOG2
+// bytes at 0x600000 (the board has 256 KiB; the program only ever reads the
+// first 128 KiB, so 17 fits the FPGA; 18 matches MAME exactly) and 2 KiB.
+// Its PIF pin is the 68010's interrupt level 4.
 module harddrivin_dsk_board #(
-  parameter ASIC65_SIN_FILE = "rtl/asic65/asic65_sin.hex"
+  parameter ASIC65_SIN_FILE = "rtl/asic65/asic65_sin.hex",
+  parameter int DSP32_RAM_LOG2 = 17
 ) (
   input  logic        clk_i,
   input  logic        rst_i,
@@ -35,7 +42,10 @@ module harddrivin_dsk_board #(
   output logic [7:0]  latch_o,
   output logic        dsp_reset_n_o, // DSPRESTN: 0 holds the DSP32C in reset
   output logic        dsp_halt_n_o,  // DSPZN: 0 halts the DSP32C
-  output logic        led_o
+  output logic        irq4_o,        // DSP32C PIF: 68010 interrupt level 4
+  output logic        led_o,
+  output logic [23:0] dsp_pc_o,
+  output logic        dsp_running_o
 );
   logic ram_sel, zram_sel, asic_sel, asic_io_sel, ctl_sel, pio_sel;
   assign ram_sel     = addr_i[23:16] == 8'h90;
@@ -45,9 +55,9 @@ module harddrivin_dsk_board #(
   assign ctl_sel     = addr_i[23:5]  == 19'h42e40;
   assign pio_sel     = addr_i[23:11] == 13'h10b8;
 
-  logic pend_q, asic_wait_q;
+  logic pend_q, asic_wait_q, pio_wait_q;
   logic start;
-  assign start = req_i && !ack_o && !pend_q && !asic_wait_q;
+  assign start = req_i && !ack_o && !pend_q && !asic_wait_q && !pio_wait_q;
 
   logic [7:0] latch_q;
   assign latch_o       = latch_q;
@@ -82,16 +92,47 @@ module harddrivin_dsk_board #(
     .rd_ack_o(asic_rd_ack), .rdata_o(asic_rdata)
   );
 
+  // ---- DSP32C and its memory -------------------------------------------------
+  logic        dsp_mem_req, dsp_mem_we, dsp_mem_ack;
+  logic [23:0] dsp_mem_addr;
+  logic [2:0]  dsp_mem_size;
+  logic [31:0] dsp_mem_wdata, dsp_mem_rdata;
+  logic        dsp_host_req, dsp_host_ack, dsp_pdf;
+  logic [15:0] dsp_host_rdata;
+  logic [31:0] dsp_bop;
+  logic        dsp_boundary;
+  dsp32c_core u_dsp32 (
+    .clk_i(clk_i), .rst_i(rst_i),
+    .reset_n_i(latch_q[0]), .halt_n_i(latch_q[1]), .step_hold_i(1'b0),
+    .mem_req_o(dsp_mem_req), .mem_we_o(dsp_mem_we), .mem_addr_o(dsp_mem_addr),
+    .mem_size_o(dsp_mem_size), .mem_wdata_o(dsp_mem_wdata),
+    .mem_rdata_i(dsp_mem_rdata), .mem_ack_i(dsp_mem_ack),
+    .host_req_i(dsp_host_req), .host_we_i(we_i), .host_reg_i(addr_i[4:1]),
+    .host_wdata_i(wdata_i), .host_rdata_o(dsp_host_rdata), .host_ack_o(dsp_host_ack),
+    .pif_o(irq4_o), .pdf_o(dsp_pdf),
+    .boundary_o(dsp_boundary), .boundary_pc_o(dsp_pc_o), .boundary_op_o(dsp_bop),
+    .running_o(dsp_running_o)
+  );
+  dsp32c_ram #(.RAM1_LOG2(DSP32_RAM_LOG2)) u_dsp32_ram (
+    .clk_i(clk_i), .req_i(dsp_mem_req), .we_i(dsp_mem_we), .addr_i(dsp_mem_addr),
+    .size_i(dsp_mem_size), .wdata_i(dsp_mem_wdata), .rdata_o(dsp_mem_rdata), .ack_o(dsp_mem_ack)
+  );
+  logic unused_dsp;
+  assign unused_dsp = ^{dsp_pdf, dsp_bop, dsp_boundary};
+
   always_ff @(posedge clk_i) begin
     ack_o <= 1'b0;
     if (rst_i) begin
-      pend_q      <= 1'b0;
-      asic_wait_q <= 1'b0;
-      latch_q     <= 8'h00;
-      rdata_o     <= 16'hffff;
+      pend_q       <= 1'b0;
+      asic_wait_q  <= 1'b0;
+      pio_wait_q   <= 1'b0;
+      dsp_host_req <= 1'b0;
+      latch_q      <= 8'h00;
+      rdata_o      <= 16'hffff;
     end else begin
       if (start) begin
         if (!we_i && asic_sel) asic_wait_q <= 1'b1;
+        else if (pio_sel) begin pio_wait_q <= 1'b1; dsp_host_req <= 1'b1; end
         else pend_q <= 1'b1;
         if (we_i && ctl_sel) latch_q[addr_i[3:1]] <= addr_i[4];
       end
@@ -101,13 +142,18 @@ module harddrivin_dsk_board #(
         rdata_o <= ram_sel     ? ram_rdata :
                    zram_sel    ? zram_rdata :
                    asic_io_sel ? 16'h4000 :
-                   pio_sel     ? 16'h0000 :    // M3: DSP32C PIO registers
                                  16'hffff;
       end
       if (asic_wait_q && asic_rd_ack) begin
         asic_wait_q <= 1'b0;
         ack_o       <= 1'b1;
         rdata_o     <= asic_rdata;
+      end
+      if (pio_wait_q && dsp_host_ack) begin
+        pio_wait_q   <= 1'b0;
+        dsp_host_req <= 1'b0;
+        ack_o        <= 1'b1;
+        rdata_o      <= dsp_host_rdata;
       end
     end
   end

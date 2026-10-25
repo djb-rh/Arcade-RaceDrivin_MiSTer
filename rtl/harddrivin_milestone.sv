@@ -134,6 +134,8 @@ module harddrivin_milestone #(
   parameter        ZERO_RAM_INIT_LO_FILE = "",
   // ASIC65 sine table (tools/asic65_sintab.py), relative to the project.
   parameter        ASIC65_SIN_FILE = "rtl/asic65/asic65_sin.hex",
+  // DSP32C RAM at 0x600000: 17 = 128 KiB (enough for the game), 18 = the board's 256 KiB
+  parameter int    DSP32_RAM_LOG2 = 17,
   // 1: every diagnostic page is captured; 0: only pages 50-54 (GSP boot),
   // 72 (runtime) and 76 (display-interrupt latency) - the other 32 pages'
   // 4096 snapshot flops and their probes drop out of the fit
@@ -2000,6 +2002,7 @@ module harddrivin_milestone #(
   // encoded, and these board interrupts are autovectored.
   always_comb begin
     if (main_periodic_irq_q) main_ipl_n = 3'b010;
+    else if (dsk_irq4)       main_ipl_n = 3'b011;   // DSK board: DSP32C PIF (MAME level 4)
     else if (!gsp_hint_n)    main_ipl_n = 3'b100;
     else if (adsp_irq)       main_ipl_n = 3'b101;
     else if (!msp_hint_n)    main_ipl_n = 3'b110;
@@ -2107,17 +2110,19 @@ module harddrivin_milestone #(
   logic [1:0]  dsk_host_be;
   logic [15:0] dsk_host_wdata, dsk_host_rdata;
   logic [7:0]  dsk_latch;
-  logic        dsk_dsp_reset_n, dsk_dsp_halt_n, dsk_led;
-  harddrivin_dsk_board #(.ASIC65_SIN_FILE(ASIC65_SIN_FILE)) u_dsk (
+  logic        dsk_dsp_reset_n, dsk_dsp_halt_n, dsk_led, dsk_irq4, dsk_dsp_running;
+  logic [23:0] dsk_dsp_pc;
+  harddrivin_dsk_board #(.ASIC65_SIN_FILE(ASIC65_SIN_FILE), .DSP32_RAM_LOG2(DSP32_RAM_LOG2)) u_dsk (
     .clk_i(clk_gsp), .rst_i(rst_gsp),
     .req_i(dsk_host_req), .we_i(dsk_host_we), .addr_i(dsk_host_addr),
     .be_i(dsk_host_be), .wdata_i(dsk_host_wdata),
     .rdata_o(dsk_host_rdata), .ack_o(dsk_host_ack),
     .latch_o(dsk_latch), .dsp_reset_n_o(dsk_dsp_reset_n),
-    .dsp_halt_n_o(dsk_dsp_halt_n), .led_o(dsk_led)
+    .dsp_halt_n_o(dsk_dsp_halt_n), .irq4_o(dsk_irq4), .led_o(dsk_led),
+    .dsp_pc_o(dsk_dsp_pc), .dsp_running_o(dsk_dsp_running)
   );
   logic unused_dsk;
-  assign unused_dsk = ^{dsk_latch, dsk_dsp_reset_n, dsk_dsp_halt_n, dsk_led};
+  assign unused_dsk = ^{dsk_latch, dsk_dsp_reset_n, dsk_dsp_halt_n, dsk_led, dsk_dsp_pc, dsk_dsp_running};
 
   // Two DDR read clients share the MiSTer port: the 68010 ROM (1 MiB at
   // 0x30000000) and the ADSP sequential EPROM image (256 KiB at

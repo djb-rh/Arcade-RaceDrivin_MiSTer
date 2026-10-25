@@ -113,6 +113,10 @@ foreach f {
   rtl/harddrivin_gsp_memory.sv
   rtl/harddrivin_compact_scanout.sv
   rtl/harddrivin_msp_memory.sv
+  rtl/dsp32c/dsp32c_pkg.sv
+  rtl/dsp32c/dsp32c_fma.sv
+  rtl/dsp32c/dsp32c_ram.sv
+  rtl/dsp32c/dsp32c_core.sv
   rtl/asic65/asic65_sim.sv
   rtl/dsk/harddrivin_dsk_board.sv
   rtl/slapstic/harddrivin_slapstic.sv

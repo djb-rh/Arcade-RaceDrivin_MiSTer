@@ -61,3 +61,10 @@ For bus traces add `-autoboot_script ~/Developer/rd-mister/mame/oracle.lua`
 with the `RD_*` variables set. Deterministic input for comparisons: record
 with `-record name.inp` and replay with `-playback name.inp`, or script inputs
 in Lua as the user's `link2.lua` does.
+
+## DSP32C instruction traces
+
+The same patch adds `RD_DSP32TRACE=<file>` (with `RD_DSP32TRACE_FROM`,
+`RD_DSP32TRACE_COUNT`, `RD_DSP32TRACE_DAU=1`): per-instruction state deltas,
+memory writes and host PIO events for the lock-step test of the FPGA core,
+`tools/sim.py dsp32-test <file>`. Format and method: docs/dsp32c.md.

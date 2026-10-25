@@ -433,6 +433,14 @@ Standalone core in Verilator, lock-step against MAME instruction traces of the
 real program; then PIO integration; then on hardware. Done when the game
 reaches attract with the drone cars driving, and the physics block at
 0x900C70 matches MAME frame-for-frame on a scripted input replay.
+- Progress 2026-10-25: `rtl/dsp32c/` core written to MAME's model (doubles,
+  fused multiply-add, MAME's latency buffers) and verified lock-step
+  against two MAME trace windows, 5,000,000 instructions in all, with zero
+  differences (`tools/sim.py dsp32-test`, docs/dsp32c.md, NOTES.md section
+  10). Integrated into the DSK board with IRQ 4; the whole-core 68010
+  comparison matches MAME through the PIO test and upload for the full
+  1.75 s run. Still to do: gameplay traces (inputs in MAME), speed-up
+  towards 10 MIPS if mailbox latency shows, hardware.
 
 **M4 — Cockpit playable with USB controls.**
 Adapt the existing cockpit USB mapping to Race Drivin': 12-bit wheel with the

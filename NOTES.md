@@ -713,3 +713,58 @@ slapstic-free sets need.
 - MAME quirk kept: in the additive sequence the +1 pattern (mask 0x3E62,
   value 0x1A42) also matches the exact end address 0x1A42, and MAME tests
   +1 first, so an access to 0x1A42 adds 1 instead of ending the sequence.
+
+## 10. DSP32C core (M3, 2026-10-25)
+
+`rtl/dsp32c/` is a DSP32C written to match MAME's model exactly; the
+design and every MAME-equivalence decision are in docs/dsp32c.md. Verified
+by lock-step against MAME instruction traces (`mame/dsp32-measure.patch`
+`RD_DSP32TRACE`, `tools/sim.py dsp32-test`).
+
+- **Results.** Window 1, the first 3,000,000 instructions (upload, boot and
+  0.3 s of execution; 526,181 memory writes, 17,091 host PIO reads): zero
+  differences. Window 2, 2,000,000 instructions from instruction 10,000,000
+  inside the DAU-heavy initialisation (172k form-1/4, 11k form-2, 142k
+  form-3 and 88k form-5 DAU ops; 222,840 writes, 1,690 PIO reads): zero
+  differences. Every CAU register, accumulator (as double bits), both flag
+  words, the DAU flags, the PIO registers and the memory write list are
+  compared after every instruction.
+- **MAME's multiply-add is fused.** clang contracts `yval + a * xval` into
+  one `fmadd` by default (checked with a discriminating test on this Mac;
+  MAME's build sets no `-ffp-contract`), and the lock-step run with half a
+  million DAU operations confirms it. A separately rounded multiply then
+  add would not have matched.
+- **Bugs the first runs caught, all in flag and sequencing details**: the
+  overflow word's `r >> 1` is an arithmetic shift in C (SystemVerilog's
+  `>>>` on an unsigned vector is not); conditional execution applies only
+  to register-form CAU ops (the immediate forms carry imm16 where the
+  condition would be); a branch's target is applied after its delay slot
+  has retired, not after the branch itself; MAME's `goto ge/lt` test N^V
+  where its `condition()` codes 10/11 test N^C.
+- **What the DSP does when.** In 150 s of attract mode with the calibrated
+  NVRAM, all 3.72 M DAU instructions execute between 4.16 s (PCR run bit
+  set after the upload) and about 6 s; afterwards the chip only polls its
+  mailbox (loop at 0x6054C4). So the "16,000 DAU ops per second" of section
+  7 is an average dominated by that burst; the real-time physics DAU work
+  happens during play only. Gameplay traces need inputs injected into MAME
+  (coin, start, driving), which is a follow-up; the user's
+  `racedrivin-tools/mame/e2e_*.lua` scripts may already do this.
+- **Trace mechanics.** Records are emitted at the top of `execute_one`, so
+  a record holds the previous instruction's effects, the host PIO accesses
+  since, and the deferred DAU write processed at the start of this one;
+  host events are stamped with the instruction count and replayed between
+  instructions. A window starts only at a clean point (not in a delay slot,
+  no deferred write pending, no accumulator inside the latency windows) and
+  the first record carries the full state plus a memory image, so the core
+  can be initialised mid-stream. `RD_DSP32TRACE_DAU=1` waits for the first
+  DAU instruction.
+- **Speed.** 10-16 clocks per instruction at 48 MHz, so 3-5 MIPS against
+  the original's 10. The whole-core comparison still holds: with the DSP32C
+  in the DSK board the 68010 write sequence matches MAME for the entire
+  1.75 s run (1,058,106 writes, MAME 1.935 s), through the PIO test and the
+  program upload; a longer run is needed to find the next divergence.
+- **In the DSK board.** DSPRESTN and DSPZN from the latch drive the core's
+  reset and halt inputs, the PIO window 0x85C000 is the host port (register
+  = A4:A1), PIF is the 68010's interrupt level 4 (MAME `hddsk_update_pif`),
+  and the RAM at 0x600000 is 128 KiB on the FPGA (`DSP32_RAM_LOG2 = 17`,
+  the game never reads above 0x61FFFF) and 256 KiB in the sim to match MAME.

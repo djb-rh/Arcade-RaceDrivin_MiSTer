@@ -198,8 +198,26 @@ def cmd_asic65_test(args):
            "--top-module", "tb_asic65", f"-DSIN_FILE=\"{sin}\"",
            str(ROOT / "rtl" / "asic65" / "asic65_sim.sv"), str(ROOT / "sim" / "tb_asic65.sv")]
     (out / "build.log").write_text(subprocess.run(cmd, cwd=ROOT, text=True, stdout=subprocess.PIPE,
-                                                  stderr=subprocess.STDOUT).stdout)
+                                                  stderr=subprocess.STDOUT, env=dict(os.environ, PATH=SIM_PATH)).stdout)
     sys.exit(subprocess.run([str(out / "obj" / "Vtb_asic65"), f"+stim={stim}"], cwd=out).returncode)
+
+
+def cmd_dsp32_test(args):
+    """Lock-step dsp32c_core against a MAME RD_DSP32TRACE file."""
+    out = BUILD / "dsp32"
+    out.mkdir(parents=True, exist_ok=True)
+    srcs = [str(ROOT / "rtl" / "dsp32c" / f) for f in ("dsp32c_pkg.sv", "dsp32c_fma.sv", "dsp32c_ram.sv", "dsp32c_core.sv")]
+    cmd = ["verilator", "--binary", "--timing", "-Wno-fatal", "-Wno-WIDTH", "--Mdir", str(out / "obj"),
+           "--top-module", "tb_dsp32", "-CFLAGS", "-O2"] + srcs + [str(ROOT / "sim" / "tb_dsp32.sv")]
+    r = subprocess.run(cmd, cwd=ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                       env=dict(os.environ, PATH=SIM_PATH))
+    (out / "build.log").write_text(r.stdout)
+    if r.returncode != 0:
+        print(r.stdout[-4000:])
+        sys.exit("verilator failed (sim/build/dsp32/build.log)")
+    trace = Path(args.trace).resolve()
+    plus = [f"+trace={trace}", f"+mem={args.mem or str(trace) + '.mem'}", f"+max={args.max_mismatch}"]
+    sys.exit(subprocess.run([str(out / "obj" / "Vtb_dsp32")] + plus, cwd=out).returncode)
 
 
 def main():
@@ -233,6 +251,11 @@ def main():
     a = sub.add_parser("asic65-test", help="replay a MAME .asic65.log through the ASIC65 model")
     a.add_argument("log")
     a.set_defaults(func=cmd_asic65_test)
+    d = sub.add_parser("dsp32-test", help="lock-step the DSP32C core against a MAME RD_DSP32TRACE file")
+    d.add_argument("trace")
+    d.add_argument("--mem", help="memory image (default <trace>.mem)")
+    d.add_argument("--max-mismatch", type=int, default=20)
+    d.set_defaults(func=cmd_dsp32_test)
     args = ap.parse_args()
     args.func(args)
 
