@@ -9,7 +9,7 @@
 // special-cased.  An exact zero sum takes IEEE's sign rules: both terms zero
 // with equal signs keep that sign, everything else gives +0.
 //
-// Four clocks: multiply, align and add, leading-one count, normalise and round.  The product
+// Five clocks: multiply, align, add, leading-one count, normalise and round.  The product
 // is exact (106 bits) and anchored in a 163-bit frame; only the addend is
 // shifted, right from a reference position three bits above the product,
 // with a sticky bit for whatever falls below the frame.  An addend more
@@ -57,15 +57,17 @@ module dsp32c_fma (
     end
   end
 
-  // stage 2: align the addend to the anchored product and add ----------------
+  // stage 2a: align the addend to the anchored product ----------------------
   // frame: bit 0 sticky, product at [106:1], addend reference LSB at bit 109
-  logic         s2_v;
-  logic         sum_neg_q, zero_q, zero_sign_q;
-  logic [W-1:0] mag_q;
-  logic signed [13:0] scale_q;      // value = mag * 2^(scale) (with the sticky LSB below)
+  // (the align, the add and the zero test in one cycle were a 26 ns path;
+  // the add gets its own clock, stage 2b)
+  logic         s2a_v;
+  logic         sp2_q, sy2_q, pz2_q, yz2_q;
+  logic [W-1:0] fp2_q, fy2_q;
+  logic signed [13:0] L2_q;
 
   always_ff @(posedge clk_i) begin
-    s2_v <= s1_v;
+    s2a_v <= s1_v;
     if (s1_v) begin
       logic signed [13:0] lp, ly, d, L;
       logic signed [14:0] s;        // right shift of the addend from its reference position
@@ -73,7 +75,6 @@ module dsp32c_fma (
       logic [6:0]   k;
       logic [52:0]  lost_mask;
       logic [W-1:0] fp, fy;
-      logic signed [W:0] sum;
       lp = 14'(ep_q) - 14'sd104;    // scale of the product's LSB
       ly = 14'(ey_q) - 14'sd52;     // scale of the addend's LSB
       d = ly - lp;
@@ -96,18 +97,33 @@ module dsp32c_fma (
         fy[0] = fy[0] | sticky_y;
       end
       L = clamp ? (ly - 14'sd108) : lp;                  // value of frame bit 1
-      if (sp_q == sy_q) begin
-        sum = $signed({1'b0, fp}) + $signed({1'b0, fy});
-        sum_neg_q <= sp_q;
+      fp2_q <= fp; fy2_q <= fy; L2_q <= L;
+      sp2_q <= sp_q; sy2_q <= sy_q; pz2_q <= pz_q; yz2_q <= yz_q;
+    end
+  end
+
+  // stage 2b: add ------------------------------------------------------------
+  logic         s2_v;
+  logic         sum_neg_q, zero_q, zero_sign_q;
+  logic [W-1:0] mag_q;
+  logic signed [13:0] scale_q;      // value = mag * 2^(scale) (with the sticky LSB below)
+
+  always_ff @(posedge clk_i) begin
+    s2_v <= s2a_v;
+    if (s2a_v) begin
+      logic signed [W:0] sum;
+      if (sp2_q == sy2_q) begin
+        sum = $signed({1'b0, fp2_q}) + $signed({1'b0, fy2_q});
+        sum_neg_q <= sp2_q;
       end else begin
-        sum = $signed({1'b0, fp}) - $signed({1'b0, fy});
-        sum_neg_q <= sum[W] ? sy_q : sp_q;
+        sum = $signed({1'b0, fp2_q}) - $signed({1'b0, fy2_q});
+        sum_neg_q <= sum[W] ? sy2_q : sp2_q;
         if (sum[W]) sum = -sum;
       end
       mag_q       <= sum[W-1:0];
-      scale_q     <= L - 14'sd1;                               // bit 1 is 2^L
+      scale_q     <= L2_q - 14'sd1;                            // bit 1 is 2^L
       zero_q      <= (sum == 0);
-      zero_sign_q <= (pz_q && yz_q) ? (sp_q && sy_q) : 1'b0;  // IEEE exact-zero sign
+      zero_sign_q <= (pz2_q && yz2_q) ? (sp2_q && sy2_q) : 1'b0;  // IEEE exact-zero sign
     end
   end
 

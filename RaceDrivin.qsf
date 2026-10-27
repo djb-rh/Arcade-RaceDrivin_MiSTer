@@ -16,10 +16,11 @@ set_global_assignment -name QII_AUTO_PACKED_REGISTERS NORMAL
 set_global_assignment -name ROUTER_LCELL_INSERTION_AND_LOGIC_DUPLICATION ON
 set_global_assignment -name PHYSICAL_SYNTHESIS_COMBO_LOGIC ON
 set_global_assignment -name PHYSICAL_SYNTHESIS_REGISTER_DUPLICATION ON
-# Retiming moves registers into combinational cones and names the new ones
-# after nodes, so the multicycle constraints' endpoint patterns miss them
-# (decoded -> io_request_wdata_q reappeared as decoded -> pixel_ppop_src~*).
-set_global_assignment -name PHYSICAL_SYNTHESIS_REGISTER_RETIMING OFF
+# Retiming stays on: without it the GSP's pixel-operation cones are 5 ns
+# over the period (the registers it moves into them are what make those
+# paths fit).  It names the moved registers after nodes, which the
+# multicycle endpoint patterns must allow for.
+set_global_assignment -name PHYSICAL_SYNTHESIS_REGISTER_RETIMING ON
 set_global_assignment -name OPTIMIZATION_TECHNIQUE SPEED
 set_global_assignment -name MUX_RESTRUCTURE ON
 set_global_assignment -name REMOVE_REDUNDANT_LOGIC_CELLS ON
