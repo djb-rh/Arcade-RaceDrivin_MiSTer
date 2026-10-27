@@ -65,6 +65,15 @@ set_multicycle_path -hold -end 1 \
 # edge after both CORE_DISPATCH and CORE_EXECUTE. `decoded` is written only
 # when leaving CORE_DECODE_WAIT and remains held for the entire instruction,
 # so this is an explicit two-cycle datapath in both reused instances.
+# The field sequencer latches a request's address, size and data in the
+# cycle after the core's request register goes active, itself a cycle after
+# decoded was captured (CORE_DECODE_WAIT), so decoded -> sequencer is two
+# cycles by the same argument as the request registers above.
+set tms_field_seq_dests [get_registers {*|u_memory_fabric|u_field_sequencer|*}]
+set_multicycle_path -setup -end 2 \
+  -from $tms_decode_dests -to $tms_field_seq_dests
+set_multicycle_path -hold -end 1 \
+  -from $tms_decode_dests -to $tms_field_seq_dests
 set tms_fill_row_base_dests [get_registers {*|u_core|fill_row_base_q*}]
 set_multicycle_path -setup -end 2 \
   -from $tms_decode_dests -to $tms_fill_row_base_dests

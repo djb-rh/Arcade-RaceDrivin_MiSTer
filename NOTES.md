@@ -968,6 +968,20 @@ a server up in a minute.
     hops from the 96% fill. The Hard Drivin' SDC relaxes decoded -> regfile
     / memory-request / fill_row_base to two cycles (decoded is captured in
     CORE_DECODE_WAIT and used from CORE_DISPATCH on) but not these
-    endpoints. Open: whether they are multicycle by the same argument, or
-    whether more logic reduction / placement seeds close them. The RBF at
-    -2.2 ns (10% of the period, slow 100C model) is worth a hardware try.
+    endpoints. The field sequencer's latches are (it latches a request the
+    cycle after the core's request register goes active): added to the
+    SDC. The rest (decoded.iclass -> divider, m2m_dst_addr_q, mm_rp_q,
+    execute_wb_data_q, state_q) are the decode register's fan-out inside
+    the GSP core, some of it genuinely single-cycle (decoded -> state_q).
+  - Placement seeds, with PLACEMENT_EFFORT_MULTIPLIER 2.0, all re-timed
+    under the same constraints: seed 67 -2.2 ns, 11 -2.33, 42 -2.14,
+    3 -2.00, 5 -1.86, 7 -1.73, **23 -0.885 (46.0 MHz)**. Seed 23 is now
+    the project's seed. The spread shows the remaining gap is routing
+    congestion at 95% fill as much as logic depth. Options from here: a
+    hardware trial of the seed-23 RBF (-0.9 ns, 4% of the period, slow
+    100C model); taking the decode register's fan-out inside the GSP
+    core off the critical path with a one-cycle-delayed copy for the
+    consumers that never run in CORE_DISPATCH (divider, move/fill
+    setup); or freeing 2-3K ALMs so the fitter has room (the DSP32C's
+    registers are 24-bit values held in 32 bits, the two framework OSDs
+    are ~1K).
