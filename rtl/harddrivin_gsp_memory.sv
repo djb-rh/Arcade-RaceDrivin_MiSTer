@@ -286,7 +286,7 @@ module harddrivin_gsp_memory
   // the tag RAM is read every cycle at the request's index; a hit or miss
   // is decided once that read matches the index and no fill landed last cycle
   assign icache_tag_ready = (icache_tag_rd_idx_q == icache_req_idx) && !icache_fill_we_d1_q;
-  assign icache_hit = icache_lookup && icache_tag_ready && (icache_tag_rd_q == icache_req_tag) &&
+  assign icache_hit = icache_lookup && req_stable_q && icache_tag_ready && (icache_tag_rd_q == icache_req_tag) &&
                       icache_valid[icache_req_idx][icache_req_off];
   // BRAM read port for hits (registered).
   // a fill writes the whole line (words without fill_word_ok stay invalid)
@@ -332,7 +332,7 @@ module harddrivin_gsp_memory
   assign dcache_lookup = cycle_req_i && vram_linear_select && word_read && !cycle_iaq_i &&
                          !vram_request_seen_q && cache_lookup_available && !icache_hit_busy_q;
   assign dcache_tag_ready = (dcache_tag_rd_idx_q == dcache_req_idx) && !dcache_fill_we_d1_q;
-  assign dcache_hit = dcache_lookup && dcache_tag_ready && (dcache_tag_rd_q == dcache_req_tag) &&
+  assign dcache_hit = dcache_lookup && req_stable_q && dcache_tag_ready && (dcache_tag_rd_q == dcache_req_tag) &&
                       dcache_valid[dcache_req_idx][dcache_req_off];
   assign dcache_fill_we = (vram_state_q == VRAM_WAIT_LINEAR) && vram_src_ack && vram_pending_linear_q && !vram_pending_iaq_q;
   always_ff @(posedge clk_i) begin
@@ -366,6 +366,19 @@ module harddrivin_gsp_memory
   logic [1:0]  lb_new_be [0:3];
   logic [7:0]  lb_age_q;
   logic        vram_accept;
+  // A request is accepted, or served from a cache, only once it has been
+  // presented for a full cycle: req_stable_q says the request was up last
+  // cycle and not acknowledged then, so (requests hold until acknowledged)
+  // the one presented now is the same one.  Only an access that would have
+  // completed in its ingress cycle (1.5% of them in a boot) is a cycle
+  // later; in return every path from the GSP's request registers into the
+  // accept-gated registers here is two cycles long (RaceDrivin.sdc), which
+  // was the core clock's critical family at this device fill.
+  logic        req_stable_q;
+  always_ff @(posedge clk_i) begin
+    if (rst_i) req_stable_q <= 1'b0;
+    else       req_stable_q <= cycle_req_i && !cycle_ack_o;
+  end
   assign wq_empty = (wq_wr_q == wq_rd_q);
   assign wq_full  = (wq_wr_q[WQ_AW-1:0] == wq_rd_q[WQ_AW-1:0]) && (wq_wr_q[WQ_AW] != wq_rd_q[WQ_AW]);
 
@@ -504,7 +517,7 @@ module harddrivin_gsp_memory
   // existing capacity, merge and line-buffer interlocks still apply.
   wire posted_write_during_drain = COCKPIT && word_write &&
                                   (vram_state_q == VRAM_DRAIN);
-  assign vram_accept = cycle_req_i && vram_select && (word_read || word_write) &&
+  assign vram_accept = cycle_req_i && req_stable_q && vram_select && (word_read || word_write) &&
           !vram_request_seen_q && (vram_state_q == VRAM_IDLE || posted_write_during_drain) && !icache_hit && !dcache_hit && !icache_hit_busy_q &&
           (!wq_drain_busy_q || posted_write_during_drain) && !srt_hit && !srt_eng_hit && !srt_snapq_hit &&
           !lb_flush_needed &&
@@ -913,7 +926,7 @@ module harddrivin_gsp_memory
       srt_q_we_d1_q <= srt_q_we_q;
       srt_done_sync_q <= {srt_done_sync_q[0], srt_done_tgl_q};
       // Shift-register transfers (see srt_read / srt_write above).
-      if (cycle_req_i && srt_read && !vram_request_seen_q && vram_state_q == VRAM_IDLE &&
+      if (cycle_req_i && req_stable_q && srt_read && !vram_request_seen_q && vram_state_q == VRAM_IDLE &&
           !icache_hit_busy_q && !wq_drain_busy_q) begin
         vram_request_seen_q <= 1'b1;
         srt_src_q           <= srt_block_addr;
@@ -924,7 +937,7 @@ module harddrivin_gsp_memory
         vram_cycle_rdata_q  <= 16'h0000;
         vram_cycle_ack_q    <= 1'b1;
       end
-      if (cycle_req_i && srt_write && !vram_request_seen_q && vram_state_q == VRAM_IDLE &&
+      if (cycle_req_i && req_stable_q && srt_write && !vram_request_seen_q && vram_state_q == VRAM_IDLE &&
           !icache_hit_busy_q && !wq_drain_busy_q && wq_empty && !lb_valid_q) begin
         // a block copy rewrites its destination rows behind the caches
         for (int q = 0; q < ICACHE_LINES; q++) icache_valid[q] <= 4'b0000;
@@ -1021,7 +1034,7 @@ module harddrivin_gsp_memory
       // an ordinary write into a buffer's source rows invalidates that
       // snapshot for FUTURE copies (queued ones keep the data the row
       // transfer moved at RTM time)
-      if (cycle_req_i && vram_select && !vram_request_seen_q && word_write) begin
+      if (cycle_req_i && req_stable_q && vram_select && !vram_request_seen_q && word_write) begin
         for (int b = 0; b < 2; b++)
           if (srt_snap_valid_q[b] && srt_snap_ready_q[b] && (vram_logical_addr[VRAM_AW-1:SRT_BIG_BITS] == srt_snap_src_q[b][VRAM_AW-1:SRT_BIG_BITS]))
             srt_snap_valid_q[b] <= 1'b0;
@@ -1031,7 +1044,7 @@ module harddrivin_gsp_memory
           !(srt_busy_q && srt_eng_idx_q == srt_q_rd_q[SRT_Q_AW-1:0]))
         srt_q_rd_q <= srt_q_rd_q + 1'b1;
       // remember which entry a held ordinary access is waiting for
-      if (cycle_req_i && vram_select && (word_read || word_write) && !vram_request_seen_q && srt_hit) begin
+      if (cycle_req_i && req_stable_q && vram_select && (word_read || word_write) && !vram_request_seen_q && srt_hit) begin
         srt_wait_valid_q <= 1'b1;
         srt_wait_mask_q  <= srt_match;
       end else if (!cycle_req_i) begin

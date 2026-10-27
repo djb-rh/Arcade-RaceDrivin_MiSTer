@@ -55,7 +55,11 @@ set tms_memory_request_dests [get_registers \
   {*|u_memory_fabric|cpu_request_* \
    *|u_memory_fabric|u_arbiter|state_q* \
    *|u_core|io_request_wdata_q* \
-   *|u_core|io_rdata_words_q*}]
+   *|u_core|io_rdata_words_q* \
+   *|u_core|io_is_io_q* \
+   *|u_core|io_access_addr_q* \
+   *|u_core|io_request_size_q* \
+   *|u_core|io_next_addr_q*}]
 set_multicycle_path -setup -end 2 \
   -from $tms_decode_dests -to $tms_memory_request_dests
 set_multicycle_path -hold -end 1 \
@@ -93,6 +97,40 @@ set_multicycle_path -setup -end 2 \
   -from $tms_decode_dests -to $tms_execute_dests
 set_multicycle_path -hold -end 1 \
   -from $tms_decode_dests -to $tms_execute_dests
+# harddrivin_gsp_memory accepts a request, or serves it from a cache, only
+# once it has been presented for a full cycle (req_stable_q), so every path
+# from the GSP system's registers (the memory fabric's request registers,
+# the field sequencer, the host interface) into the registers written on
+# accept or hit is two cycles.  Excluded: the cache tag reads, which look up
+# every cycle; the local (palette / control / scroll) path, which has no
+# such rule; the diagnostics; and req_stable_q itself.
+set gsp_mem_all  [get_registers {*|u_gsp_memory|*}]
+set gsp_mem_1cyc [get_registers \
+  {*|u_gsp_memory|*tag_rd_idx_q* *|u_gsp_memory|*tag_rd_q* *|u_gsp_memory|*tag_ram* \
+   *|u_gsp_memory|req_stable_q* \
+   *|u_gsp_memory|local_* *|u_gsp_memory|peripheral_* *|u_gsp_memory|palette_* \
+   *|u_gsp_memory|control_* *|u_gsp_memory|scroll_latch_q* *|u_gsp_memory|fine_scroll_o* \
+   *|u_gsp_memory|shiftreg_enable_o* *|u_gsp_memory|last_palette_* *|u_gsp_memory|color_pair_q* \
+   *|u_gsp_memory|srt_wait_* *|u_gsp_memory|*_count_o* *|u_gsp_memory|*_seen_o* \
+   *|u_gsp_memory|*_trace_o* *|u_gsp_memory|instruction_fetch_seen_o*}]
+set gsp_mem_accept_dests [remove_from_collection $gsp_mem_all $gsp_mem_1cyc]
+set gsp_req_sources [get_registers {*|u_gsp|* *|u_cockpit_expander|*}]
+set_multicycle_path -setup -end 2 -from $gsp_req_sources -to $gsp_mem_accept_dests
+set_multicycle_path -hold -end 1 -from $gsp_req_sources -to $gsp_mem_accept_dests
+# The core takes a request's read data and completion only on the fabric's
+# acknowledge, which tb_core measured never earlier than two cycles after
+# the request registers load (5.6M acknowledges over 5.5 s of boot, minimum
+# age 2), so the request registers' data (not the active flag, which is on
+# the acknowledge path itself) -> core is two cycles.
+set tms_request_data_regs [get_registers \
+  {*|u_memory_fabric|cpu_request_addr_q* *|u_memory_fabric|cpu_request_size_q* \
+   *|u_memory_fabric|cpu_request_wdata_q* *|u_memory_fabric|cpu_request_we_q* \
+   *|u_memory_fabric|cpu_request_io_we_raw_q* *|u_memory_fabric|cpu_request_iaq_q* \
+   *|u_memory_fabric|cpu_request_srt_raw_q* *|u_memory_fabric|cpu_request_io_rdata_q*}]
+set_multicycle_path -setup -end 2 \
+  -from $tms_request_data_regs -to [get_registers {*|u_gsp|u_tms34010|u_core|*}]
+set_multicycle_path -hold -end 1 \
+  -from $tms_request_data_regs -to [get_registers {*|u_gsp|u_tms34010|u_core|*}]
 set tms_fill_row_base_dests [get_registers {*|u_core|fill_row_base_q*}]
 set_multicycle_path -setup -end 2 \
   -from $tms_decode_dests -to $tms_fill_row_base_dests

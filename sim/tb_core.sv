@@ -286,6 +286,8 @@ module tb_core;
              gsp_age_hist[3], gsp_age_hist[4], gsp_age_hist[5]);
     $display("gsp monitor raw: fabric request active %0d cycles, memory cycle_req %0d cycles, vram_accept %0d; acks %0d min age %0d",
              dbg_active_cycles, dbg_cycle_req, dbg_accepts, gsp_ack_count, gsp_ack_min_age);
+    $display("gsp accepts/hits with the request identical to the previous cycle: %0d, changed: %0d (must be 0)",
+             gsp_stable_accepts, gsp_unstable_accepts);
     $finish;
   end
 
@@ -317,4 +319,31 @@ module tb_core;
     end
   end
   int gsp_ack_count = 0, gsp_ack_min_age = 99;
+  // The constraint's premise, checked directly at gsp_memory's inputs: every
+  // accept or cache hit happens with the request (req, kind, addr, wdata)
+  // identical to the previous cycle's.  gsp_unstable_accepts must stay 0.
+  logic        gm_prev_req = 0, gm_prev_iaq = 0;
+  logic [31:0] gm_prev_addr = 0;
+  logic [15:0] gm_prev_wdata = 0;
+  int          gm_prev_kind = 0;
+  int          gsp_stable_accepts = 0, gsp_unstable_accepts = 0;
+  always @(posedge clk_core) begin
+    automatic bit stable_now = u_core.u_gsp_memory.cycle_req_i && gm_prev_req &&
+      (u_core.u_gsp_memory.cycle_addr_i == gm_prev_addr) && (u_core.u_gsp_memory.cycle_wdata_i == gm_prev_wdata) &&
+      (int'(u_core.u_gsp_memory.cycle_kind_i) == gm_prev_kind) && (u_core.u_gsp_memory.cycle_iaq_i == gm_prev_iaq);
+    if (u_core.u_gsp_memory.vram_accept || u_core.u_gsp_memory.icache_hit || u_core.u_gsp_memory.dcache_hit) begin
+      if (stable_now) gsp_stable_accepts = gsp_stable_accepts + 1;
+      else begin
+        gsp_unstable_accepts = gsp_unstable_accepts + 1;
+        if (gsp_unstable_accepts <= 5)
+          $display("gsp UNSTABLE accept at %0t: req %0d->%0d addr %08x->%08x kind %0d->%0d", $time, gm_prev_req,
+                   u_core.u_gsp_memory.cycle_req_i, gm_prev_addr, u_core.u_gsp_memory.cycle_addr_i, gm_prev_kind, int'(u_core.u_gsp_memory.cycle_kind_i));
+      end
+    end
+    gm_prev_req   = u_core.u_gsp_memory.cycle_req_i;
+    gm_prev_addr  = u_core.u_gsp_memory.cycle_addr_i;
+    gm_prev_wdata = u_core.u_gsp_memory.cycle_wdata_i;
+    gm_prev_kind  = int'(u_core.u_gsp_memory.cycle_kind_i);
+    gm_prev_iaq   = u_core.u_gsp_memory.cycle_iaq_i;
+  end
 endmodule
