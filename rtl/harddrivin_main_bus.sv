@@ -359,9 +359,25 @@ module harddrivin_main_bus #(
     vector_match_q
   };
 
-  wire [7:0] cockpit_wheel8 = steering_i <= 12'h010 ? 8'h10 :
-    steering_i >= 12'hff0 ? 8'hf0 :
-    8'h10 + 8'((32'(steering_i - 12'h010) * 32'd224) / 32'd4064);
+  // Cockpit wheel for the 8-bit ADC: 0x10 + (steer - 0x10) * 224 / 4064,
+  // computed over three clocks as a constant multiply (x * 924735 >> 24 is
+  // x * 224 / 4064 for every x up to 4064, checked exhaustively); the
+  // combinational divider it replaces was a 55 ns path on the 48 MHz clock.
+  // The ADC samples the channel 2 us into a conversion, so the latency is
+  // invisible.
+  logic [11:0] wheel_x_q;
+  logic [31:0] wheel_m_q;
+  logic        wheel_lo_q, wheel_hi_q, wheel_lo2_q, wheel_hi2_q;
+  logic [7:0]  cockpit_wheel8;
+  always_ff @(posedge clk_i) begin
+    wheel_x_q   <= steering_i - 12'h010;
+    wheel_lo_q  <= steering_i <= 12'h010;
+    wheel_hi_q  <= steering_i >= 12'hff0;
+    wheel_m_q   <= {20'd0, wheel_x_q} * 32'd924735;
+    wheel_lo2_q <= wheel_lo_q;
+    wheel_hi2_q <= wheel_hi_q;
+    cockpit_wheel8 <= wheel_lo2_q ? 8'h10 : wheel_hi2_q ? 8'hf0 : 8'h10 + wheel_m_q[31:24];
+  end
   always_comb begin
     unique case (adc_control_q[2:0])
       3'd0: adc8_data = accelerator_i;

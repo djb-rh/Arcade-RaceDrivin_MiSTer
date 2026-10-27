@@ -9,7 +9,7 @@
 // special-cased.  An exact zero sum takes IEEE's sign rules: both terms zero
 // with equal signs keep that sign, everything else gives +0.
 //
-// Three clocks: multiply, align and add, normalise and round.  The product
+// Four clocks: multiply, align and add, leading-one count, normalise and round.  The product
 // is exact (106 bits) and anchored in a 163-bit frame; only the addend is
 // shifted, right from a reference position three bits above the product,
 // with a sticky bit for whatever falls below the frame.  An addend more
@@ -111,29 +111,46 @@ module dsp32c_fma (
     end
   end
 
-  // stage 3: normalise and round --------------------------------------------
+  // stage 3: leading-one position ---------------------------------------------
+  // (the count, the normalising shift and the rounding in one cycle were a
+  // 33 ns path; the count gets its own clock)
+  logic         s3_v;
+  logic         sum_neg3_q, zero3_q, zero_sign3_q;
+  logic [W-1:0] mag3_q;
+  logic signed [13:0] scale3_q;
+  logic [7:0]   msb_q;
   always_ff @(posedge clk_i) begin
-    done_o <= s2_v;
+    s3_v <= s2_v;
     if (s2_v) begin
-      if (zero_q || mag_q == 0) result_o <= {zero_sign_q, 63'd0};
+      int msb;
+      msb = 0;
+      for (int i = W - 1; i >= 0; i--) if (mag_q[i]) begin msb = i; break; end
+      msb_q <= 8'(msb);
+      mag3_q <= mag_q; scale3_q <= scale_q; sum_neg3_q <= sum_neg_q;
+      zero3_q <= zero_q || (mag_q == 0); zero_sign3_q <= zero_sign_q;
+    end
+  end
+
+  // stage 4: normalise and round --------------------------------------------
+  always_ff @(posedge clk_i) begin
+    done_o <= s3_v;
+    if (s3_v) begin
+      if (zero3_q) result_o <= {zero_sign3_q, 63'd0};
       else begin
-        int msb;
         logic [W-1:0] norm;
         logic [52:0]  kept;
         logic         guard, sticky, roundup;
         logic [53:0]  r;
         logic signed [13:0] e;
-        msb = 0;
-        for (int i = W - 1; i >= 0; i--) if (mag_q[i]) begin msb = i; break; end
-        norm = mag_q << (W - 1 - msb);               // MSB at W-1
+        norm = mag3_q << (8'(W - 1) - msb_q);        // MSB at W-1
         kept = norm[W-1 -: 53];
         guard = norm[W-54];
         sticky = norm[W-55:0] != 0;
         roundup = guard && (sticky || kept[0]);
         r = {1'b0, kept} + (roundup ? 54'd1 : 54'd0);
-        e = scale_q + 14'(msb) + 14'sd1023;          // biased exponent of 2^msb
+        e = scale3_q + 14'(msb_q) + 14'sd1023;       // biased exponent of 2^msb
         if (r[53]) begin e = e + 14'sd1; r = r >> 1; end
-        result_o <= {sum_neg_q, e[10:0], r[51:0]};
+        result_o <= {sum_neg3_q, e[10:0], r[51:0]};
       end
     end
   end

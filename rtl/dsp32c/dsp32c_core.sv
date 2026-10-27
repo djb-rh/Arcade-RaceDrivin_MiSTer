@@ -150,7 +150,7 @@ module dsp32c_core
   typedef enum logic [5:0] {
     S_IDLE, S_HOST, S_HOST_MEM, S_DEFER, S_DEFER_W, S_FETCH, S_FETCH_W, S_EXEC,
     S_CAU_MEM, S_CAU_W,
-    S_DX, S_DX_W, S_DY, S_DY_W, S_DCOMP, S_DFMA_W, S_DFIN, S_DROUND_W, S_DZ, S_DSET, S_DONE
+    S_DX, S_DX_W, S_DY, S_DY_W, S_DCOMP, S_DFMA_W, S_DROUND_W, S_DINT, S_DZ, S_DFIN, S_DSET, S_DONE
   } state_t;
   state_t st_q;
 
@@ -208,13 +208,16 @@ module dsp32c_core
   logic [63:0] am_out;
   logic [31:0] d2d_in, i2d_in, res32_c;
   logic [63:0] d2d_out, i2d_out, dtd_in, zval_c, rounded_c;
-  logic [31:0] dtd_out;
+  logic [31:0] dtd_out, res32_q;
+  logic [63:0] fres_q, rounded_q;      // int / int24: the FMA result, then its floor/ceil
   logic signed [31:0] iv_c;
   wire   is_word_c = (dec.cls == OP_D5 && dec.sub == 4'd3);
   assign zval_c    = dz_is_res_q ? dres_q : dy_q;
-  // int / int24 result: floor(val +- 0.5) then the saturated int32, clamped
-  assign rounded_c = dbl_floor(fma_res, r[26][4]);
-  assign iv_c      = dbl_to_int32(rounded_c);
+  // int / int24 result over three states (S_DROUND_W, S_DINT, S_DZ): the
+  // floor/ceil of val +- 0.5, the saturated and clamped int32, then the
+  // DSP float of it; in one cycle the chain was a 38 ns path
+  assign rounded_c = dbl_floor(fres_q, r[26][4]);
+  assign iv_c      = dbl_to_int32(rounded_q);
   always_comb begin
     logic signed [31:0] iv;
     iv = iv_c;
@@ -233,7 +236,7 @@ module dsp32c_core
       S_DX:     am_idx = xi[1:0];
       S_DY:     am_idx = yi[1:0];
       S_DCOMP:  d2d_in = dword_q ^ 32'h7fffffff;                 // seed
-      S_DFMA_W: d2d_in = (dec.sub == 4'd3) ? (res32_c << 16) : (res32_c << 8);
+      S_DZ:     d2d_in = (dec.sub == 4'd3) ? (res32_q << 16) : (res32_q << 8);
       S_DFIN:   d2d_in = is_word_c ? (dword_q << 16) : dword_q;
       default: ;
     endcase
@@ -870,13 +873,12 @@ module dsp32c_core
           endcase
         end
         S_DFMA_W: if (fma_done) begin
-          if (dec.cls == OP_D5) begin
-            // int / int24: floor(val + 0.5) or ceil(val - 0.5), then the integer (res32_c)
-            dword_q <= res32_c;
-            dres_q <= d2d_out;
-          end else dres_q <= fma_res;
-          st_q <= S_DFIN;
+          if (dec.cls == OP_D5) begin fres_q <= fma_res; st_q <= S_DROUND_W; end   // int / int24
+          else begin dres_q <= fma_res; st_q <= S_DFIN; end
         end
+        S_DROUND_W: begin rounded_q <= rounded_c; st_q <= S_DINT; end   // floor(val + 0.5) / ceil(val - 0.5)
+        S_DINT:     begin res32_q <= res32_c; st_q <= S_DZ; end         // saturated, clamped integer
+        S_DZ:       begin dword_q <= res32_q; dres_q <= d2d_out; st_q <= S_DFIN; end
         // ----------------------------------------------- DAU Z write and flags
         S_DFIN: begin
           // Z operand write (dau_write_pi_double / _4bytes / _2bytes)
