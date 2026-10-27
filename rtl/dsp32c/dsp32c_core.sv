@@ -149,15 +149,16 @@ module dsp32c_core
   // ---- sequencer -----------------------------------------------------------
   typedef enum logic [5:0] {
     S_IDLE, S_HOST, S_HOST_MEM, S_DEFER, S_DEFER_W, S_FETCH, S_FETCH_W, S_EXEC,
-    S_CAU_MEM, S_CAU_W,
+    S_ALU, S_CAU_MEM, S_CAU_W,
     S_DX, S_DX_W, S_DY, S_DY_W, S_DCOMP, S_DFMA_W, S_DROUND_W, S_DINT, S_DZ, S_DFIN, S_DSET, S_DONE
   } state_t;
   state_t st_q;
 
   logic [31:0] op_q;
   logic [23:0] pc_fetch_q;
-  decode_t     dec;
-  assign dec = decode(op_q);
+  decode_t     dec;                   // decoded with the fetch (dec_q), not from op_q each cycle
+  decode_t     dec_q;
+  assign dec = dec_q;
 
   // pending branch: target evaluated after the delay slot
   logic        br_pend_q;
@@ -176,6 +177,14 @@ module dsp32c_core
   logic [31:0] cau_addr_q, cau_val_q;
   logic [2:0]  cau_size_q;
   logic [4:0]  cau_p_q, cau_i_q;
+  // ALU operands registered in S_EXEC, the operation in S_ALU; pointer
+  // post-increments applied in the state after the one that read the
+  // pointer, from the value read and the step (no mux in that path): the
+  // read mux, the adder and the register write in one cycle were a 23 ns path
+  logic [31:0] alu_s1_q, alu_s2_q, alu_drv_q;
+  logic        inc_pend_q;
+  logic [4:0]  inc_idx_q;
+  logic [31:0] inc_base_q, inc_amt_q;   // the pointer's value as read, and the step
 
   // Three shared read ports on r, indexed by state: the sequencer's reads
   // through ten separately indexed 32:1 muxes were most of the core's logic.
@@ -438,11 +447,15 @@ module dsp32c_core
       par_q <= 0; pdr_q <= 0; pdr2_q <= 0; pir_q <= 0; pcr_q <= 0; emr_q <= 0; esr_q <= 0; pcw_q <= 0; pare_q <= 0;
       ibuf_q <= 0; obuf_q <= 0; piop_q <= 0; lastp_q <= 0; lastpins_q <= 0; icount_q <= 0;
       ab_idx_q <= 0; mb_idx_q <= 0; br_pend_q <= 0; br_slots_q <= 0;
-      host_done_q <= 0; st_q <= S_IDLE; pif_o <= 0; pdf_o <= 0;
+      host_done_q <= 0; st_q <= S_IDLE; pif_o <= 0; pdf_o <= 0; inc_pend_q <= 0;
       device_reset();
     end else begin
       if (dev_reset_edge) device_reset();
       if (!host_req_i) host_done_q <= 1'b0;
+      if (inc_pend_q) begin                   // post-increment of the pointer read last state
+        inc_pend_q <= 1'b0;
+        set_r_raw(inc_idx_q, (inc_base_q + inc_amt_q) & 32'h00ffffff);
+      end
       case (st_q)
         // ---------------------------------------------------------------- idle
         S_IDLE: begin
@@ -567,7 +580,7 @@ module dsp32c_core
           st_q <= S_FETCH_W;
         end
         S_FETCH_W: if (mem_ack_i) begin
-          op_q <= mem_rdata_i;
+          op_q <= mem_rdata_i; dec_q <= decode(mem_rdata_i);
           boundary_o <= 1'b1; boundary_pc_o <= pc_fetch_q; boundary_op_o <= mem_rdata_i;
           d_cond_skip_q <= 1'b0;
           st_q <= S_EXEC;
@@ -628,67 +641,18 @@ module dsp32c_core
             OP_ALU_SS, OP_ALU_DI: begin
               // only the register forms are conditional; the immediate forms carry imm16 there
               if (dec.cls == OP_ALU_DI || !op_q[10] || condition({1'b0, op_q[15:12]}, 1'b0, dfl)) begin
-                logic is_di; logic [31:0] wr; logic do_wr, nz00;
+                logic is_di;
                 is_di = (dec.cls == OP_ALU_DI);
                 if (!dec.e24) begin
-                  drv = {16'd0, rA[15:0]};
-                  s1v = is_di ? {16'd0, imm16} : {16'd0, rB[15:0]};
-                  s2v = is_di ? drv : (op_q[11] ? {16'd0, rC[15:0]} : drv);
+                  alu_drv_q <= {16'd0, rA[15:0]};
+                  alu_s1_q  <= is_di ? {16'd0, imm16} : {16'd0, rB[15:0]};
+                  alu_s2_q  <= is_di ? {16'd0, rA[15:0]} : (op_q[11] ? {16'd0, rC[15:0]} : {16'd0, rA[15:0]});
                 end else begin
-                  drv = rA;
-                  s1v = is_di ? imm16_sx24 : rB;
-                  s2v = is_di ? drv : (op_q[11] ? rC : drv);
+                  alu_drv_q <= rA;
+                  alu_s1_q  <= is_di ? imm16_sx24 : rB;
+                  alu_s2_q  <= is_di ? rA : (op_q[11] ? rC : rA);
                 end
-                do_wr = 1'b1; nz00 = 1'b0; alu_res = 32'd0;
-                case (dec.sub)
-                  4'h0: alu_res = s2v + s1v;                      // add
-                  4'h1: alu_res = s1v << 1;                       // mul2
-                  4'h2: alu_res = s1v - s2v;                      // subr
-                  4'h4: alu_res = s2v - s1v;                      // sub
-                  4'h5: alu_res = 32'd0 - s1v;                    // neg
-                  4'h6: begin alu_res = s2v & ~s1v; nz00 = 1'b1; end
-                  4'h7: begin alu_res = drv - s1v; do_wr = 1'b0; end  // cmp
-                  4'h8: begin alu_res = s2v ^ s1v; nz00 = 1'b1; end
-                  4'ha: begin alu_res = s2v | s1v; nz00 = 1'b1; end
-                  4'he: begin alu_res = s2v & s1v; nz00 = 1'b1; end
-                  4'hf: begin alu_res = drv & s1v; nz00 = 1'b1; do_wr = 1'b0; end
-                  4'h9: begin                                     // rcr
-                    alu_res = dec.e24 ? (((nzc_q >> 1) & 32'h800000) | (s1v >> 1))
-                                      : (((nzc_q >> 9) & 32'h8000) | (s1v >> 1));
-                  end
-                  4'hb: alu_res = ((nzc_q >> 24) & 32'h1) | (s1v << 1);   // rcl
-                  4'hc: alu_res = s1v >> 1;                                // shr
-                  4'hd: alu_res = dec.e24 ? ((s1v & 32'h800000) | (s1v >> 1)) : ((s1v & 32'h8000) | (s1v >> 1));
-                  default: do_wr = 1'b0;
-                endcase
-                if (do_wr) begin
-                  // result register width: 16-bit forms sign-extend to 24, 24-bit truncate
-                  // (MAME leaves the logical 'e' results untruncated; they are 24-bit anyway)
-                  wr = dec.e24 ? (alu_res & 32'h00ffffff) : {8'd0, {8{alu_res[15]}}, alu_res[15:0]};
-                  if (dec.e24 && nz00) wr = alu_res;
-                  if (dec.e24 && dec.sub == 4'hc) wr = alu_res;      // shre: m_r[dr] = res
-                  set_r(dr_lo, wr);
-                end
-                case (dec.sub)
-                  4'h0, 4'h2, 4'h4: if (!dec.e24) set_nzcv16(s1v, s2v, alu_res); else set_nzcv24(s1v, s2v, alu_res);
-                  4'h1, 4'h5:       if (!dec.e24) set_nzcv16(s1v, 32'd0, alu_res); else set_nzcv24(s1v, 32'd0, alu_res);
-                  4'h7:             if (!dec.e24) set_nzcv16(drv, s1v, alu_res); else set_nzcv24(drv, s1v, alu_res);
-                  4'h6, 4'h8, 4'ha, 4'he, 4'hf: if (!dec.e24) set_nz00_16(alu_res); else set_nz00_24(alu_res);
-                  4'h9, 4'hc, 4'hd: begin   // shifts right: carry = bit shifted out
-                    nzc_q <= dec.e24 ? (alu_res | ((s1v & 32'h1) << 24)) : (((alu_res & 32'hffff) << 8) | ((s1v & 32'h1) << 24));
-                    vfl_q <= 32'd0;
-                  end
-                  4'hb: begin
-                    nzc_q <= dec.e24 ? (alu_res | ((s1v & 32'h800000) << 1)) : (((alu_res & 32'hffff) << 8) | ((s1v & 32'h8000) << 9));
-                    vfl_q <= 32'd0;
-                  end
-                  default: ;
-                endcase
-                // the immediate forms use op/op<<8 as the second flag operand
-                if (is_di) case (dec.sub)
-                  4'h0, 4'h2, 4'h4, 4'h7: if (!dec.e24) set_nzcv16(drv, op_q, alu_res); else set_nzcv24(drv, op_q << 8, alu_res);
-                  default: ;
-                endcase
+                st_q <= S_ALU;
               end
             end
             OP_LDST: begin
@@ -738,7 +702,7 @@ module dsp32c_core
                   2'd2: mem_wdata_o <= {16'd0, rA[15:0]};
                   default: mem_wdata_o <= {{8{rA[23]}}, rA[23:0]};  // sext24
                 endcase
-                if (is_reg) set_r_raw(op_q[9:5], (rB + cau_inc(rC, op_q[4:0], sz)) & 32'h00ffffff);
+                if (is_reg) begin inc_pend_q <= 1'b1; inc_idx_q <= op_q[9:5]; inc_base_q <= rB; inc_amt_q <= cau_inc(rC, op_q[4:0], sz); end
                 st_q <= S_CAU_MEM;
               end
             end
@@ -759,6 +723,64 @@ module dsp32c_core
             end
             default: ;
           endcase
+        end
+        // ------------------------------------------------------- CAU ALU operation
+        S_ALU: begin
+          logic is_di; logic [31:0] wr; logic do_wr, nz00;
+          is_di = (dec.cls == OP_ALU_DI);
+          drv = alu_drv_q; s1v = alu_s1_q; s2v = alu_s2_q;
+    do_wr = 1'b1; nz00 = 1'b0; alu_res = 32'd0;
+          case (dec.sub)
+            4'h0: alu_res = s2v + s1v;                      // add
+            4'h1: alu_res = s1v << 1;                       // mul2
+            4'h2: alu_res = s1v - s2v;                      // subr
+            4'h4: alu_res = s2v - s1v;                      // sub
+            4'h5: alu_res = 32'd0 - s1v;                    // neg
+            4'h6: begin alu_res = s2v & ~s1v; nz00 = 1'b1; end
+            4'h7: begin alu_res = drv - s1v; do_wr = 1'b0; end  // cmp
+            4'h8: begin alu_res = s2v ^ s1v; nz00 = 1'b1; end
+            4'ha: begin alu_res = s2v | s1v; nz00 = 1'b1; end
+            4'he: begin alu_res = s2v & s1v; nz00 = 1'b1; end
+            4'hf: begin alu_res = drv & s1v; nz00 = 1'b1; do_wr = 1'b0; end
+            4'h9: begin                                     // rcr
+              alu_res = dec.e24 ? (((nzc_q >> 1) & 32'h800000) | (s1v >> 1))
+                                : (((nzc_q >> 9) & 32'h8000) | (s1v >> 1));
+            end
+            4'hb: alu_res = ((nzc_q >> 24) & 32'h1) | (s1v << 1);   // rcl
+            4'hc: alu_res = s1v >> 1;                                // shr
+            4'hd: alu_res = dec.e24 ? ((s1v & 32'h800000) | (s1v >> 1)) : ((s1v & 32'h8000) | (s1v >> 1));
+            default: do_wr = 1'b0;
+          endcase
+          if (do_wr) begin
+            // result register width: 16-bit forms sign-extend to 24, 24-bit truncate
+            // (MAME leaves the logical 'e' results untruncated; they are 24-bit anyway)
+            wr = dec.e24 ? (alu_res & 32'h00ffffff) : {8'd0, {8{alu_res[15]}}, alu_res[15:0]};
+            if (dec.e24 && nz00) wr = alu_res;
+            if (dec.e24 && dec.sub == 4'hc) wr = alu_res;      // shre: m_r[dr] = res
+            set_r(dr_lo, wr);
+          end
+          case (dec.sub)
+            4'h0, 4'h2, 4'h4: if (!dec.e24) set_nzcv16(s1v, s2v, alu_res); else set_nzcv24(s1v, s2v, alu_res);
+            4'h1, 4'h5:       if (!dec.e24) set_nzcv16(s1v, 32'd0, alu_res); else set_nzcv24(s1v, 32'd0, alu_res);
+            4'h7:             if (!dec.e24) set_nzcv16(drv, s1v, alu_res); else set_nzcv24(drv, s1v, alu_res);
+            4'h6, 4'h8, 4'ha, 4'he, 4'hf: if (!dec.e24) set_nz00_16(alu_res); else set_nz00_24(alu_res);
+            4'h9, 4'hc, 4'hd: begin   // shifts right: carry = bit shifted out
+              nzc_q <= dec.e24 ? (alu_res | ((s1v & 32'h1) << 24)) : (((alu_res & 32'hffff) << 8) | ((s1v & 32'h1) << 24));
+              vfl_q <= 32'd0;
+            end
+            4'hb: begin
+              nzc_q <= dec.e24 ? (alu_res | ((s1v & 32'h800000) << 1)) : (((alu_res & 32'hffff) << 8) | ((s1v & 32'h8000) << 9));
+              vfl_q <= 32'd0;
+            end
+            default: ;
+          endcase
+          // the immediate forms use op/op<<8 as the second flag operand
+          if (is_di) case (dec.sub)
+            4'h0, 4'h2, 4'h4, 4'h7: if (!dec.e24) set_nzcv16(drv, op_q, alu_res); else set_nzcv24(drv, op_q << 8, alu_res);
+            default: ;
+          endcase
+
+          st_q <= S_DONE;
         end
         // ------------------------------------------------ CAU memory completion
         S_CAU_MEM: if (mem_ack_i) begin
@@ -786,7 +808,7 @@ module dsp32c_core
           lastp_q <= xp;
           if (xp != 4'd0) begin
             mem_req_o <= 1'b1; mem_we_o <= 1'b0; mem_addr_o <= rA[23:0]; mem_size_o <= 3'd4;
-            set_r_raw(xp, (rA + dau_inc(rB, xi, 3'd4)) & 32'h00ffffff);
+            inc_pend_q <= 1'b1; inc_idx_q <= {1'b0, xp}; inc_base_q <= rA; inc_amt_q <= dau_inc(rB, xi, 3'd4);
             st_q <= S_DX_W;
           end else begin
             dx_q <= (xi < 3'd4) ? (d_mult_x ? am_out : a[xi[1:0]]) : 64'd0;
@@ -808,7 +830,7 @@ module dsp32c_core
               logic [2:0] sz;
               sz = (dec.cls == OP_D5 && dec.sub == 4'd2) ? 3'd2 : 3'd4;   // float reads a word
               mem_req_o <= 1'b1; mem_we_o <= 1'b0; mem_addr_o <= rA[23:0]; mem_size_o <= sz;
-              set_r_raw(p, (rA + dau_inc(rB, yi, sz)) & 32'h00ffffff);
+              inc_pend_q <= 1'b1; inc_idx_q <= {1'b0, p}; inc_base_q <= rA; inc_amt_q <= dau_inc(rB, yi, sz);
               st_q <= S_DY_W;
             end else begin
               // accumulator operand: doubles direct or deferred; raw forms convert
@@ -894,7 +916,7 @@ module dsp32c_core
                 lastp_q <= p;
                 defer_write(rA[23:0], is_word ? {16'd0, rawv[15:0]} : rawv, !is_word);
               end else defer_write(rA[23:0], dtd_out, 1'b1);
-              set_r_raw(p, (rA + dau_inc(rB, zi, is_word ? 3'd2 : 3'd4)) & 32'h00ffffff);
+              inc_pend_q <= 1'b1; inc_idx_q <= {1'b0, p}; inc_base_q <= rA; inc_amt_q <= dau_inc(rB, zi, is_word ? 3'd2 : 3'd4);
             end else if (zi < 3'd4) begin
               // accumulator as Z: a noflags set, recorded in the history
               ab_push(zi[1:0]);

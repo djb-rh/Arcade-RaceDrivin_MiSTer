@@ -122,3 +122,13 @@ if {[get_collection_size $hd_osd_de2] < 1 || [get_collection_size $hd_osd_mux] <
   error "OSD route constraint must match both RTL endpoints, including fitter duplicates"
 }
 set_max_delay -from $hd_osd_de2 -to $hd_osd_mux 5.000
+
+# The 68010 (TG68K) advances on a one-in-MAIN_CPU_DIV clock enable (18 at
+# 48 MHz, harddrivin_milestone main_cpu_ce): every register inside it,
+# including its inferred register-file RAM, captures only on that pulse, so
+# register-to-register paths within it have at least 18 clocks.  Two is
+# enough for the ALU and register-file paths (-2.9 ns at one).  Paths into
+# and out of the CPU keep the single-cycle requirement.
+set tg68k_regs [get_registers {*|u_main_68010|*}]
+set_multicycle_path -setup -end 2 -from $tg68k_regs -to $tg68k_regs
+set_multicycle_path -hold -end 1 -from $tg68k_regs -to $tg68k_regs
