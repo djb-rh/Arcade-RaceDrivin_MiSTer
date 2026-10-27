@@ -51,7 +51,11 @@ QUARTUS_SH = /opt/intelFPGA_lite/24.1std/quartus/bin/quartus_sh
 
 `make build` rsyncs the tree there (excluding `.git`, Quartus outputs,
 `sim/build` and `make.local`), runs `quartus_sh --flow compile RaceDrivin`
-and copies `output_files/` back.
+and copies `output_files/` back. A build is about 35 minutes (7 synthesis,
+25 fit); the server runs three or four in parallel in copies of the tree
+for seed sweeps. Timing closure notes, including the measuring loop (one-
+module Quartus projects for sizes, a grouped `report_timing` for the
+failing path families), are in NOTES.md section 12.
 
 Fallback if no server is available: Docker Desktop with Rosetta on the Mac
 (Rosetta is not installed here yet), using an image with Quartus Lite 24.1.

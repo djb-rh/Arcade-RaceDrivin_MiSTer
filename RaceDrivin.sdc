@@ -111,7 +111,7 @@ set gsp_mem_1cyc [get_registers \
    *|u_gsp_memory|local_* *|u_gsp_memory|peripheral_* *|u_gsp_memory|palette_* \
    *|u_gsp_memory|control_* *|u_gsp_memory|scroll_latch_q* *|u_gsp_memory|fine_scroll_o* \
    *|u_gsp_memory|shiftreg_enable_o* *|u_gsp_memory|last_palette_* *|u_gsp_memory|color_pair_q* \
-   *|u_gsp_memory|srt_wait_* *|u_gsp_memory|*_count_o* *|u_gsp_memory|*_seen_o* \
+   *|u_gsp_memory|*_count_o* *|u_gsp_memory|*_seen_o* \
    *|u_gsp_memory|*_trace_o* *|u_gsp_memory|instruction_fetch_seen_o*}]
 set gsp_mem_accept_dests [remove_from_collection $gsp_mem_all $gsp_mem_1cyc]
 set gsp_req_sources [get_registers {*|u_gsp|* *|u_cockpit_expander|*}]

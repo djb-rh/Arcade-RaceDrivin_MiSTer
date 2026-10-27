@@ -1001,3 +1001,28 @@ a server up in a minute.
     note in the fabric reports the same path at -0.39 ns at 88% fill in
     their build. The GSP is released by the 68010 at 5.24 s (MAME) / ~4.4 s
     (sim): runs shorter than that never exercise it.
+  - **Closed (2026-10-27 evening).** Three more steps, each verified in
+    simulation first:
+    1. gsp_memory accepts a request, or serves it from a cache, only once
+       it has been presented for a full cycle (`req_stable_q`), so every
+       path from the GSP's request registers into the accept-gated
+       registers is two cycles and the SDC says so. tb_core checks the
+       premise at the module's inputs: 6.7M accepts/hits over 5.5 s, none
+       with the request changed from the previous cycle. Only the 1.5% of
+       accesses that completed in their ingress cycle are a cycle later;
+       the GSP reaches the same addresses at the same milliseconds. Total
+       negative slack ~500 ns -> 42 ns.
+    2. The fabric's request data -> the core as two-cycle (the core takes
+       read data only on the acknowledge; tb_core: 5.6M acknowledges, never
+       earlier than two cycles after the request registers load), and the
+       request-boundary registers that load with io_request_wdata_q added
+       to the author's set. -1.07 ns, TNS -25.
+    3. Register retiming must stay on (off: -5.2 ns, all in the FMA's
+       align-and-add stage, which retiming had been splitting). The FMA now
+       aligns and adds on separate clocks (five clocks). With everything:
+       **core clock +1.10 ns, HDMI +0.60 ns, all corners and check types
+       clean**, 38,764 ALMs (92%).
+    Seeds still move things by ~1 ns, so a future change may need a seed
+    sweep again; the one-module Quartus projects and the grouped path
+    report (quartus_sta -t with report_timing -npaths 1000, grouped by
+    endpoint pair) are the loop.

@@ -1047,7 +1047,10 @@ module harddrivin_gsp_memory
       if (cycle_req_i && req_stable_q && vram_select && (word_read || word_write) && !vram_request_seen_q && srt_hit) begin
         srt_wait_valid_q <= 1'b1;
         srt_wait_mask_q  <= srt_match;
-      end else if (!cycle_req_i) begin
+      end else if (!req_stable_q) begin
+        // cleared the cycle after the request drops (req_stable_q is a
+        // register here, so no single-cycle path from the request into
+        // these flags): the next request cannot be accepted before then
         srt_wait_valid_q <= 1'b0;
         srt_wait_mask_q  <= '0;
       end
