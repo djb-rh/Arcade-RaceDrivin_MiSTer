@@ -281,6 +281,40 @@ module tb_core;
     end
     if (trace_fd != 0) $fclose(trace_fd);
     $display("tb_core: done, %0d ms, %0d bus steps", ms, bus_steps);
+    $display("gsp request age at accept: %0d accepts, min %0d, histogram 0..5: %0d %0d %0d %0d %0d %0d",
+             gsp_req_accepts, gsp_req_min_age, gsp_age_hist[0], gsp_age_hist[1], gsp_age_hist[2],
+             gsp_age_hist[3], gsp_age_hist[4], gsp_age_hist[5]);
+    $display("gsp monitor raw: fabric request active %0d cycles, memory cycle_req %0d cycles, vram_accept %0d; acks %0d min age %0d",
+             dbg_active_cycles, dbg_cycle_req, dbg_accepts, gsp_ack_count, gsp_ack_min_age);
     $finish;
   end
+
+  // Timing-constraint evidence: cycles from a CPU request's ingress into the
+  // GSP memory fabric (cpu_request_active_q rising) to each gsp_memory
+  // accept while it is active.  Age 0 would be an accept in the ingress
+  // cycle itself, a single-cycle path from the request registers; a minimum
+  // of 1 justifies the two-cycle constraint on them (RaceDrivin.sdc).
+  int gsp_req_age = -1, gsp_req_min_age = 99, gsp_req_accepts = 0;
+  int gsp_age_hist [0:7];
+  longint dbg_active_cycles = 0, dbg_accepts = 0, dbg_cycle_req = 0;
+  initial for (int i = 0; i < 8; i++) gsp_age_hist[i] = 0;
+  always @(posedge clk_core) begin
+    if (u_core.u_gsp.u_tms34010.u_memory_fabric.cpu_request_active_q) dbg_active_cycles = dbg_active_cycles + 1;
+    if (u_core.u_gsp_memory.vram_accept) dbg_accepts = dbg_accepts + 1;
+    if (u_core.u_gsp_memory.cycle_req_i) dbg_cycle_req = dbg_cycle_req + 1;
+    if (u_core.u_gsp.u_tms34010.u_memory_fabric.cpu_request_active_q) begin
+      if (gsp_req_age < 0) gsp_req_age = 0; else gsp_req_age = gsp_req_age + 1;
+    end else gsp_req_age = -1;
+    if (u_core.u_gsp_memory.vram_accept && gsp_req_age >= 0) begin
+      gsp_req_accepts = gsp_req_accepts + 1;
+      if (gsp_req_age < gsp_req_min_age) gsp_req_min_age = gsp_req_age;
+      if (gsp_req_age < 8) gsp_age_hist[gsp_req_age] = gsp_age_hist[gsp_req_age] + 1;
+    end
+    // and the fabric's acknowledge back to the core (the I/O read path)
+    if (u_core.u_gsp.u_tms34010.u_memory_fabric.cpu_field_ack_o && gsp_req_age >= 0) begin
+      gsp_ack_count = gsp_ack_count + 1;
+      if (gsp_req_age < gsp_ack_min_age) gsp_ack_min_age = gsp_req_age;
+    end
+  end
+  int gsp_ack_count = 0, gsp_ack_min_age = 99;
 endmodule

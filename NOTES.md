@@ -985,3 +985,19 @@ a server up in a minute.
     setup); or freeing 2-3K ALMs so the fitter has room (the DSP32C's
     registers are 24-bit values held in 32 bits, the two framework OSDs
     are ~1K).
+  - Both register files are now MLAB LUT RAM (GSP 1,191 -> 176 ALMs, DSP32C
+    core ~8,400 -> 5,740 standalone): Quartus infers an MLAB only from a
+    single asynchronous read per array in its `ramstyle = "MLAB,
+    no_rw_check"` form, so one copy per read port, with valid bits standing
+    in for the flops' reset. Fill 93%. Seeds of the GSP-only version:
+    -1.07 / -1.18 ns; with both: -1.99 (seed 23), more seeds running.
+  - **The fabric -> gsp_memory paths are genuinely single-cycle.** The
+    remaining failures (cpu_request_addr_q / cpu_request_is_io ->
+    gsp_memory wq_data, wq_be, icache_valid, vram_pending_addr_q) looked
+    like candidates for the same two-cycle argument as the field sequencer.
+    tb_core now measures it (the "gsp request age" lines): over 5.5 s of
+    boot, 968,222 accepts, 14,977 of them in the ingress cycle of the
+    request (age 0). So no constraint there; the Hard Drivin' author's
+    note in the fabric reports the same path at -0.39 ns at 88% fill in
+    their build. The GSP is released by the 68010 at 5.24 s (MAME) / ~4.4 s
+    (sim): runs shorter than that never exercise it.
