@@ -74,6 +74,25 @@ set_multicycle_path -setup -end 2 \
   -from $tms_decode_dests -to $tms_field_seq_dests
 set_multicycle_path -hold -end 1 \
   -from $tms_decode_dests -to $tms_field_seq_dests
+# Registers loaded only in CORE_EXECUTE (or by the divider, started from
+# CORE_EXECUTE): decoded is captured at the end of CORE_DECODE_WAIT and
+# CORE_DISPATCH always sits between, so these capture two or more cycles
+# after it changes.
+set tms_execute_dests [get_registers \
+  {*|u_core|execute_wb_data_q* \
+   *|u_core|m2m_dst_new_q* \
+   *|u_core|mv_addr_q* \
+   *|u_core|mv_store_data_q* \
+   *|u_core|m2m_src_addr_q* \
+   *|u_core|m2m_dst_addr_q* \
+   *|u_core|mm_rp_q* \
+   *|u_core|mm_mask_q* \
+   *|u_core|mm_mask_idx_q* \
+   *|u_core|u_divider|*}]
+set_multicycle_path -setup -end 2 \
+  -from $tms_decode_dests -to $tms_execute_dests
+set_multicycle_path -hold -end 1 \
+  -from $tms_decode_dests -to $tms_execute_dests
 set tms_fill_row_base_dests [get_registers {*|u_core|fill_row_base_q*}]
 set_multicycle_path -setup -end 2 \
   -from $tms_decode_dests -to $tms_fill_row_base_dests
