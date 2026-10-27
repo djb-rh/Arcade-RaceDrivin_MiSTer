@@ -10,8 +10,12 @@
 // with equal signs keep that sign, everything else gives +0.
 //
 // Three clocks: multiply, align and add, normalise and round.  The product
-// is exact (106 bits) and the addend is aligned into a 170-bit field with a
-// sticky bit, so there is exactly one rounding.
+// is exact (106 bits) and anchored in a 163-bit frame; only the addend is
+// shifted, right from a reference position three bits above the product,
+// with a sticky bit for whatever falls below the frame.  An addend more
+// than 108 bits above the product's LSB sits at the reference position and
+// the product collapses into the sticky bit, which is exact for rounding
+// since it is then entirely below the guard bit.  One rounding.
 module dsp32c_fma (
   input  logic        clk_i,
   input  logic        start_i,
@@ -23,7 +27,7 @@ module dsp32c_fma (
   output logic        done_o,       // pulse, result_o valid
   output logic [63:0] result_o
 );
-  localparam int W = 170;           // working width
+  localparam int W = 163;           // frame width
 
   // stage 1 ------------------------------------------------------------------
   logic        s1_v;
@@ -53,7 +57,8 @@ module dsp32c_fma (
     end
   end
 
-  // stage 2: align into a common scale and add ------------------------------
+  // stage 2: align the addend to the anchored product and add ----------------
+  // frame: bit 0 sticky, product at [106:1], addend reference LSB at bit 109
   logic         s2_v;
   logic         sum_neg_q, zero_q, zero_sign_q;
   logic [W-1:0] mag_q;
@@ -62,47 +67,46 @@ module dsp32c_fma (
   always_ff @(posedge clk_i) begin
     s2_v <= s1_v;
     if (s1_v) begin
-      logic signed [13:0] lp, ly, mmax, L;
-      logic signed [13:0] shp, shy;
-      logic [W-1:0] fp, fy, stk_p, stk_y;
-      logic         sp_stk, sy_stk;
+      logic signed [13:0] lp, ly, d, L;
+      logic signed [14:0] s;        // right shift of the addend from its reference position
+      logic         clamp, sticky_y;
+      logic [6:0]   k;
+      logic [52:0]  lost_mask;
+      logic [W-1:0] fp, fy;
       logic signed [W:0] sum;
-      // LSB scales of the two operands and their MSB positions
-      lp = 14'(ep_q) - 14'sd104;
-      ly = 14'(ey_q) - 14'sd52;
-      mmax = (lp + 14'sd105 > ly + 14'sd52) ? lp + 14'sd105 : ly + 14'sd52;
-      L = (lp < ly) ? lp : ly;
-      if (L < mmax - 14'(W - 4)) L = mmax - 14'(W - 4);
-      shp = lp - L;  shy = ly - L;
-      // place each operand; bit 0 of the field is the sticky position, the
-      // operand proper starts at bit 1
-      fp = 170'd0; fy = 170'd0; sp_stk = 1'b0; sy_stk = 1'b0;
+      lp = 14'(ep_q) - 14'sd104;    // scale of the product's LSB
+      ly = 14'(ey_q) - 14'sd52;     // scale of the addend's LSB
+      d = ly - lp;
+      clamp = (d > 14'sd108);
+      s = clamp ? 15'sd0 : 15'(14'sd108 - d);
+      fp = '0;
       if (!pz_q) begin
-        if (shp >= 0) fp = {64'd0, mp_q} << (shp + 1);
-        else begin
-          fp = {64'd0, mp_q} >> (-shp - 1);
-          stk_p = ({64'd0, mp_q} << (W - (-shp - 1)));   // bits shifted out
-          sp_stk = (-shp - 1) >= W ? (mp_q != 0) : (stk_p != 0);
-          if ((-shp - 1) >= W) fp = 170'd0;
-        end
-        fp[0] = sp_stk;
+        if (clamp) fp[0] = 1'b1;    // entirely below the guard bit: sticky only
+        else fp[106:1] = mp_q;
       end
+      fy = '0; sticky_y = 1'b0;
       if (!yz_q) begin
-        if (shy >= 0) fy = {117'd0, my_q} << (shy + 1);
+        if (s >= 15'sd162) sticky_y = 1'b1;              // all of it below the frame
         else begin
-          fy = {117'd0, my_q} >> (-shy - 1);
-          stk_y = ({117'd0, my_q} << (W - (-shy - 1)));
-          sy_stk = (-shy - 1) >= W ? (my_q != 0) : (stk_y != 0);
-          if ((-shy - 1) >= W) fy = 170'd0;
+          fy = ({{(W-53){1'b0}}, my_q} << 109) >> s;
+          k = (s > 15'sd109) ? 7'(s - 15'sd109) : 7'd0;  // addend bits lost below bit 0
+          lost_mask = (k >= 7'd53) ? '1 : ((53'd1 << k) - 53'd1);
+          sticky_y = (my_q & lost_mask) != 53'd0;
         end
-        fy[0] = sy_stk;
+        fy[0] = fy[0] | sticky_y;
       end
-      sum = (sp_q ? -$signed({1'b0, fp}) : $signed({1'b0, fp})) +
-            (sy_q ? -$signed({1'b0, fy}) : $signed({1'b0, fy}));
-      sum_neg_q <= sum[W];
-      mag_q     <= sum[W] ? (W)'(-sum) : sum[W-1:0];
-      scale_q   <= L - 14'sd1;                               // bit 1 is 2^L
-      zero_q    <= (sum == 0);
+      L = clamp ? (ly - 14'sd108) : lp;                  // value of frame bit 1
+      if (sp_q == sy_q) begin
+        sum = $signed({1'b0, fp}) + $signed({1'b0, fy});
+        sum_neg_q <= sp_q;
+      end else begin
+        sum = $signed({1'b0, fp}) - $signed({1'b0, fy});
+        sum_neg_q <= sum[W] ? sy_q : sp_q;
+        if (sum[W]) sum = -sum;
+      end
+      mag_q       <= sum[W-1:0];
+      scale_q     <= L - 14'sd1;                               // bit 1 is 2^L
+      zero_q      <= (sum == 0);
       zero_sign_q <= (pz_q && yz_q) ? (sp_q && sy_q) : 1'b0;  // IEEE exact-zero sign
     end
   end

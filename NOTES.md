@@ -905,3 +905,48 @@ by lock-step against MAME instruction traces (`mame/dsp32-measure.patch`
   wheel and switches reach the game through MAME's exact calibration
   arithmetic. This 21 s run was at the old divider (16); the comparison
   itself needs the interrupt-alignment work before it can follow inputs.
+
+## 12. First Quartus builds (2026-10-27)
+
+Build host: Hetzner CPX41, Quartus Lite 24.1 (docs/toolchain.md). The AWS
+account stayed "blocked and not recognized as a valid account" for two days
+after an expired card was replaced, through two support cases; Hetzner had
+a server up in a minute.
+
+- **Quartus's SystemVerilog is narrower than Verilator's.** A bit-select
+  on a function call result (`fifo_at(n, i)[15:8]`) is a syntax error.
+  Byte-enable RAM inference accepts only the template form with the lane
+  writes spelled out (`if (be[0]) ram[a][0] <= wd[0]; ...` on a
+  `logic [3:0][7:0] ram[]`): the original lane part-selects and a `for`
+  loop over the lanes both synthesised silently into flip-flops (1.1M
+  registers, 518K ALUTs, no "uninferred RAM" message). A one-module Quartus
+  project on the build host (`quartus_map`, ~10 s to 1 min) shows the RAM
+  summary and the ALUT/ALM estimate for a single module; that loop is how
+  each reduction below was measured.
+- **The board's 256 KiB DSP32C RAM is 128 KiB in the FPGA.** MAME traces:
+  at gameplay the lower 128 KiB all hold data (program and tables in the
+  first 64 KiB, working data in the second), the upper 128 KiB only ever
+  receive the boot-time clear (two passes of 16-bit zero writes, never read
+  back). The DSK board self-test's XRAM item tests the 68010-side 64 KiB
+  RAM, not this one. M10K budget after the fixes: 542 of 553 blocks.
+- **Memory.** Synthesis of the flip-flop RAM needed >9 GB and was killed by
+  the OOM handler on the 16 GB host; a 32 GB swap file carried the next run
+  (peak 15 GB virtual, fit 24.5 GB). With the RAM inferred, synthesis peaks
+  at 2.3 GB and takes 7 minutes instead of 80.
+- **Logic.** First fit: 43,256 ALMs needed of 41,910 (103%), M10K 98%,
+  DSP blocks 39%. Measured per module and reduced:
+  - MSP off in the Quartus top (Race Drivin' has none; the sim already
+    built without it): 11K ALUTs, 1 Mbit M10K.
+  - rd_cabinet_io 1,304 -> ~500 ALMs (serial frame assembly, per-byte CRC,
+    one FIFO write port).
+  - dsp32c_core 10,911 -> 8,430 ALMs (one write port and three state-
+    selected read ports on the register file, single instances of the
+    DSP<->double conversions and the accumulator-history lookup, 3-bit ages
+    instead of 48-bit timestamps). The write port alone was only -490: the
+    ten separately indexed 32:1 read muxes were the cost.
+  - dsp32c_fma 2,856 -> ~1,660 ALMs: product anchored in a 163-bit frame,
+    only the 53-bit addend shifted (one right shifter plus a lost-bits mask
+    for the sticky) instead of both operands through six 170-bit shifters.
+    Still one rounding; 200,000 C-library fma vectors, 0 mismatches.
+  Every change checked lock-step against MAME (boot 3M instructions, two
+  gameplay traces of 2M) before the next build.
