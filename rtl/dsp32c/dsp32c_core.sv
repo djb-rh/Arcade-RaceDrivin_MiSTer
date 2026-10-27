@@ -81,7 +81,7 @@ module dsp32c_core
   logic [1:0]  ab_reg  [0:3];
   logic        ab_n    [0:3], ab_z [0:3];
   logic [1:0]  ab_vu   [0:3];
-  logic [47:0] ab_time [0:3];
+  logic [2:0]  ab_age  [0:3];         // instructions since the push, saturating at 4
   logic        ab_valid[0:3];
   logic [1:0]  ab_idx_q;
   // deferred memory writes (MAME mbuf)
@@ -96,26 +96,26 @@ module dsp32c_core
   wire c_f = nzc_q[24];
   wire v_f = vfl_q[23];
 
-  function automatic logic [63:0] amult(input logic [1:0] aidx, input logic [47:0] now);
+  function automatic logic [63:0] amult(input logic [1:0] aidx);
     logic [63:0] val;
     logic [1:0] bi;
     val = a[aidx];
     bi = ab_idx_q - 2'd1;
     for (int k = 0; k < 4; k++) begin
-      if (!ab_valid[bi] || (now - ab_time[bi]) > 48'd2) break;
+      if (!ab_valid[bi] || ab_age[bi] > 3'd2) break;
       if (ab_reg[bi] == aidx) val = ab_val[bi];
       bi = bi - 2'd1;
     end
     return val;
   endfunction
 
-  function automatic logic [3:0] deferred_flags(input logic [47:0] now);  // {V, U, N, Z}
+  function automatic logic [3:0] deferred_flags();  // {V, U, N, Z}
     logic [3:0] f;
     logic [1:0] bi;
     f = {vu_q[1], vu_q[0], dbl_is_neg(nz_q), dbl_is_zero(nz_q)};
     bi = ab_idx_q - 2'd1;
     for (int k = 0; k < 4; k++) begin
-      if (!ab_valid[bi] || (now - ab_time[bi]) > 48'd3) break;
+      if (!ab_valid[bi] || ab_age[bi] > 3'd3) break;
       f = {ab_vu[bi][1], ab_vu[bi][0], ab_n[bi], ab_z[bi]};
       bi = bi - 2'd1;
     end
@@ -177,6 +177,74 @@ module dsp32c_core
   logic [2:0]  cau_size_q;
   logic [4:0]  cau_p_q, cau_i_q;
 
+  // Three shared read ports on r, indexed by state: the sequencer's reads
+  // through ten separately indexed 32:1 muxes were most of the core's logic.
+  //   A: the CAU destination / pointer register   B: the second source or
+  //   the DAU post-increment register r16-r23     C: the CAU third operand
+  logic [4:0]  rdA_idx, rdB_idx, rdC_idx;
+  logic [31:0] rA, rB, rC;
+  logic [3:0]  dy_p, dz_p;               // the Y and Z pointer fields after p=15 inheritance
+  assign dy_p = (dec.cls != OP_D5 && yp == 4'd15) ? lastp_q : yp;
+  assign dz_p = (zp == 4'd15) ? lastp_q : zp;
+  always_comb begin
+    rdA_idx = dr_lo; rdB_idx = op_q[9:5]; rdC_idx = op_q[4:0];
+    case (st_q)
+      S_EXEC: rdA_idx = (dec.cls == OP_DEC_GOTO) ? dr_hi : dr_lo;
+      S_DX:   begin rdA_idx = {1'b0, xp};   rdB_idx = {2'b10, xi}; end
+      S_DY:   begin rdA_idx = {1'b0, dy_p}; rdB_idx = {2'b10, yi}; end
+      S_DFIN: begin rdA_idx = {1'b0, dz_p}; rdB_idx = {2'b10, zi}; end
+      S_DONE: rdA_idx = br_reg_q;
+      default: ;
+    endcase
+  end
+  assign rA = r[rdA_idx];
+  assign rB = r[rdB_idx];
+  assign rC = r[rdC_idx];
+
+  // One instance each of the DSP<->double conversions and of the
+  // accumulator-history lookup, their inputs chosen by state (seven copies
+  // of dsp_to_double alone were ~700 ALUTs).
+  logic [1:0]  am_idx;
+  logic [63:0] am_out;
+  logic [31:0] d2d_in, i2d_in, res32_c;
+  logic [63:0] d2d_out, i2d_out, dtd_in, zval_c, rounded_c;
+  logic [31:0] dtd_out;
+  logic signed [31:0] iv_c;
+  wire   is_word_c = (dec.cls == OP_D5 && dec.sub == 4'd3);
+  assign zval_c    = dz_is_res_q ? dres_q : dy_q;
+  // int / int24 result: floor(val +- 0.5) then the saturated int32, clamped
+  assign rounded_c = dbl_floor(fma_res, r[26][4]);
+  assign iv_c      = dbl_to_int32(rounded_c);
+  always_comb begin
+    logic signed [31:0] iv;
+    iv = iv_c;
+    if (dec.sub == 4'd3) res32_c = {16'd0, iv[15:0]};           // (int16_t) of a saturated int32
+    else begin
+      // std::clamp<double>(val, -0x800000, 0x7fffff) on an integral value
+      if (iv > 32'sh007fffff) iv = 32'sh007fffff;
+      if (iv < -32'sh00800000) iv = -32'sh00800000;
+      res32_c = iv;
+    end
+  end
+  always_comb begin
+    am_idx = dec.am[1:0];
+    d2d_in = mem_rdata_i;                                        // S_DX_W, S_DY_W
+    case (st_q)
+      S_DX:     am_idx = xi[1:0];
+      S_DY:     am_idx = yi[1:0];
+      S_DCOMP:  d2d_in = dword_q ^ 32'h7fffffff;                 // seed
+      S_DFMA_W: d2d_in = (dec.sub == 4'd3) ? (res32_c << 16) : (res32_c << 8);
+      S_DFIN:   d2d_in = is_word_c ? (dword_q << 16) : dword_q;
+      default: ;
+    endcase
+  end
+  assign am_out  = amult(am_idx);
+  assign d2d_out = dsp_to_double(d2d_in);
+  assign i2d_in  = (dec.sub == 4'd2) ? {{16{dword_q[15]}}, dword_q[15:0]} : {{8{dword_q[23]}}, dword_q[23:0]};
+  assign i2d_out = int_to_double(i2d_in);
+  assign dtd_in  = (st_q == S_DY) ? a[yi[1:0]] : zval_c;
+  assign dtd_out = double_to_dsp(dtd_in);
+
   dsp32c_fma u_fma (
     .clk_i(clk_i), .start_i(fma_start), .a_i(fma_a), .x_i(fma_x), .y_i(fma_y),
     .neg_p_i(fma_negp), .neg_y_i(fma_negy), .done_o(fma_done), .result_o(fma_res)
@@ -233,15 +301,16 @@ module dsp32c_core
   assign running_o = pcr_q[0] && !held;
 
   // post-increment amount for DAU pointer field i (0-7): r[i+16], x4 for i>=6
-  function automatic logic [31:0] dau_inc(input logic [2:0] i, input logic [2:0] size);
+  // (rv is r[i], read through port B / C)
+  function automatic logic [31:0] dau_inc(input logic [31:0] rv, input logic [2:0] i, input logic [2:0] size);
     logic [31:0] v;
-    v = r[{2'b10, i}];                 // r16..r23
+    v = rv;                            // r16..r23
     if (i >= 3'd6) v = (size == 3'd2) ? (v << 1) : (v << 2);
     return v;
   endfunction
-  function automatic logic [31:0] cau_inc(input logic [4:0] i, input logic [2:0] size);
+  function automatic logic [31:0] cau_inc(input logic [31:0] rv, input logic [4:0] i, input logic [2:0] size);
     logic [31:0] v;
-    v = r[i];
+    v = rv;
     if (i == 5'd22 || i == 5'd23) begin
       if (size == 3'd2) v = v << 1;
       else if (size == 3'd4) v = v << 2;
@@ -276,8 +345,19 @@ module dsp32c_core
   wire [4:0] dr_lo = op_q[20:16];
   wire [4:0] dr_hi = op_q[25:21];
 
+  // One general write port for r: every register write in the sequencer goes
+  // through rf_*, applied at the end of the clock (at most one general
+  // register is written per state; r15 has its own increment and branch
+  // writes).  Direct r[idx] <= writes from a dozen places gave every
+  // register a wide multi-source mux: a third of the core's logic.
+  logic        rf_we, rf_chk;
+  logic [4:0]  rf_idx;
+  logic [31:0] rf_val;
   task automatic set_r(input logic [4:0] idx, input logic [31:0] val);
-    if (reg_writeable(idx)) r[idx] <= val;
+    rf_we = 1'b1; rf_chk = 1'b1; rf_idx = idx; rf_val = val;
+  endtask
+  task automatic set_r_raw(input logic [4:0] idx, input logic [31:0] val);
+    rf_we = 1'b1; rf_chk = 1'b0; rf_idx = idx; rf_val = val;
   endtask
 
   task automatic ab_push(input logic [1:0] aidx);
@@ -286,7 +366,7 @@ module dsp32c_core
     ab_n[ab_idx_q]     <= dbl_is_neg(nz_q);
     ab_z[ab_idx_q]     <= dbl_is_zero(nz_q);
     ab_vu[ab_idx_q]    <= vu_q;
-    ab_time[ab_idx_q]  <= icount_q;
+    ab_age[ab_idx_q]   <= 3'd0;
     ab_valid[ab_idx_q] <= 1'b1;
     ab_idx_q <= ab_idx_q + 2'd1;
   endtask
@@ -347,6 +427,7 @@ module dsp32c_core
     fma_start  <= 1'b0;
     host_ack_o <= 1'b0;
     reset_n_q  <= reset_n_i;
+    rf_we = 1'b0; rf_chk = 1'b0; rf_idx = 5'd0; rf_val = 32'd0;
     if (rst_i) begin
       for (int k = 0; k < 32; k++) r[k] <= 32'd0;
       for (int k = 0; k < 4; k++) begin a[k] <= 64'd0; ab_valid[k] <= 1'b0; mb_valid[k] <= 1'b0; end
@@ -416,6 +497,7 @@ module dsp32c_core
           end else if (can_run) begin
             // start an instruction: process the deferred write slot first
             icount_q <= icount_q + 48'd1;
+            for (int k = 0; k < 4; k++) if (ab_age[k] != 3'd4) ab_age[k] <= ab_age[k] + 3'd1;
             mb_idx_q <= mb_idx_q + 2'd1;
             st_q <= S_DEFER;
           end
@@ -491,7 +573,7 @@ module dsp32c_core
         S_EXEC: begin
           st_q <= S_DONE;
           r[15] <= r[15] + 32'd4;                   // MAME: PC += 4 before the handler runs
-          dfl = deferred_flags(icount_q);
+          dfl = deferred_flags();
           case (dec.cls)
             OP_ILLEGAL: ;
             OP_NOP, OP_GOTO, OP_DEC_GOTO, OP_CALL, OP_GOTO24, OP_CALL24: begin
@@ -503,12 +585,11 @@ module dsp32c_core
                                                   : condition(dec.cond, 1'b1, dfl);
                 OP_DEC_GOTO: begin
                   logic [31:0] oldv;
-                  oldv = r[dr_hi];
-                  r[dr_hi] <= {8'd0, {8{oldv[15]}}, oldv[15:0]} - 32'd1 & 32'h00ffffff;
+                  oldv = rA;
                   // EXTEND16_TO_24(m_r[hr] - 1): sign-extend the 16-bit result
                   begin
                     logic [15:0] dec16; dec16 = oldv[15:0] - 16'd1;
-                    r[dr_hi] <= {8'd0, {8{dec16[15]}}, dec16};
+                    set_r_raw(dr_hi, {8'd0, {8{dec16[15]}}, dec16});
                   end
                   br_taken = !oldv[15];                         // (int16)old >= 0
                 end
@@ -530,12 +611,12 @@ module dsp32c_core
             OP_ADD_SI: begin
               logic [31:0] hv;
               if (!dec.e24) begin
-                hv = {16'd0, r[dr_lo][15:0]};
+                hv = {16'd0, rA[15:0]};
                 alu_res = hv + {16'd0, imm16};
                 set_r(dr_hi, {8'd0, {8{alu_res[15]}}, alu_res[15:0]});
                 set_nzcv16(hv, op_q, alu_res);
               end else begin
-                hv = r[dr_lo];
+                hv = rA;
                 alu_res = hv + imm16_sx24;
                 set_r(dr_hi, alu_res & 32'h00ffffff);
                 set_nzcv24(hv, op_q << 8, alu_res);
@@ -547,13 +628,13 @@ module dsp32c_core
                 logic is_di; logic [31:0] wr; logic do_wr, nz00;
                 is_di = (dec.cls == OP_ALU_DI);
                 if (!dec.e24) begin
-                  drv = {16'd0, r[dr_lo][15:0]};
-                  s1v = is_di ? {16'd0, imm16} : {16'd0, r[op_q[9:5]][15:0]};
-                  s2v = is_di ? drv : (op_q[11] ? {16'd0, r[op_q[4:0]][15:0]} : drv);
+                  drv = {16'd0, rA[15:0]};
+                  s1v = is_di ? {16'd0, imm16} : {16'd0, rB[15:0]};
+                  s2v = is_di ? drv : (op_q[11] ? {16'd0, rC[15:0]} : drv);
                 end else begin
-                  drv = r[dr_lo];
-                  s1v = is_di ? imm16_sx24 : r[op_q[9:5]];
-                  s2v = is_di ? drv : (op_q[11] ? r[op_q[4:0]] : drv);
+                  drv = rA;
+                  s1v = is_di ? imm16_sx24 : rB;
+                  s2v = is_di ? drv : (op_q[11] ? rC : drv);
                 end
                 do_wr = 1'b1; nz00 = 1'b0; alu_res = 32'd0;
                 case (dec.sub)
@@ -619,8 +700,8 @@ module dsp32c_core
                 // special register through the pointer field
                 if (is_store) begin
                   logic [31:0] sv;
-                  sv = (dec.sub[1:0] == 2'd0) ? (r[dr_lo] >> 8) : (dec.sub[1:0] == 2'd1) ? (r[dr_lo] & 32'hff)
-                     : (dec.sub[1:0] == 2'd2) ? {16'd0, r[dr_lo][15:0]} : r[dr_lo];
+                  sv = (dec.sub[1:0] == 2'd0) ? (rA >> 8) : (dec.sub[1:0] == 2'd1) ? (rA & 32'hff)
+                     : (dec.sub[1:0] == 2'd2) ? {16'd0, rA[15:0]} : rA;
                   case (op_q[4:0])
                     5'd4: ibuf_q <= sv;  5'd5: obuf_q <= sv;
                     5'd6: begin pdr_q <= sv[15:0]; pcr_q <= pcr_q | 16'h0020; update_pins(pcr_q | 16'h0020); end
@@ -644,17 +725,17 @@ module dsp32c_core
                   st_q <= S_CAU_W;
                 end
               end else begin
-                addr = is_reg ? r[op_q[9:5]] : imm16_sx24;
+                addr = is_reg ? rB : imm16_sx24;
                 cau_addr_q <= addr;
                 mem_req_o <= 1'b1; mem_addr_o <= addr[23:0]; mem_size_o <= sz;
                 mem_we_o <= is_store;
                 case (dec.sub[1:0])
-                  2'd0: mem_wdata_o <= r[dr_lo] >> 8;                 // store_hi: byte 15:8
-                  2'd1: mem_wdata_o <= r[dr_lo];                      // store_li
-                  2'd2: mem_wdata_o <= {16'd0, r[dr_lo][15:0]};
-                  default: mem_wdata_o <= {{8{r[dr_lo][23]}}, r[dr_lo][23:0]};  // sext24
+                  2'd0: mem_wdata_o <= rA >> 8;                 // store_hi: byte 15:8
+                  2'd1: mem_wdata_o <= rA;                      // store_li
+                  2'd2: mem_wdata_o <= {16'd0, rA[15:0]};
+                  default: mem_wdata_o <= {{8{rA[23]}}, rA[23:0]};  // sext24
                 endcase
-                if (is_reg) r[op_q[9:5]] <= (r[op_q[9:5]] + cau_inc(op_q[4:0], sz)) & 32'h00ffffff;
+                if (is_reg) set_r_raw(op_q[9:5], (rB + cau_inc(rC, op_q[4:0], sz)) & 32'h00ffffff);
                 st_q <= S_CAU_MEM;
               end
             end
@@ -701,20 +782,20 @@ module dsp32c_core
         S_DX: begin
           lastp_q <= xp;
           if (xp != 4'd0) begin
-            mem_req_o <= 1'b1; mem_we_o <= 1'b0; mem_addr_o <= r[xp][23:0]; mem_size_o <= 3'd4;
-            r[xp] <= (r[xp] + dau_inc(xi, 3'd4)) & 32'h00ffffff;
+            mem_req_o <= 1'b1; mem_we_o <= 1'b0; mem_addr_o <= rA[23:0]; mem_size_o <= 3'd4;
+            set_r_raw(xp, (rA + dau_inc(rB, xi, 3'd4)) & 32'h00ffffff);
             st_q <= S_DX_W;
           end else begin
-            dx_q <= (xi < 3'd4) ? (d_mult_x ? amult(xi[1:0], icount_q) : a[xi[1:0]]) : 64'd0;
+            dx_q <= (xi < 3'd4) ? (d_mult_x ? am_out : a[xi[1:0]]) : 64'd0;
             st_q <= S_DY;
           end
         end
-        S_DX_W: if (mem_ack_i) begin dx_q <= dsp_to_double(mem_rdata_i); st_q <= S_DY; end
+        S_DX_W: if (mem_ack_i) begin dx_q <= d2d_out; st_q <= S_DY; end
         // ------------------------------------------------------------- DAU Y
         S_DY: begin
           logic [3:0] p; logic is_1st;
           is_1st = (dec.cls == OP_D5);               // dau_read_pi_*_1st: no p=15 inheritance
-          p = (!is_1st && yp == 4'd15) ? lastp_q : yp;
+          p = dy_p;
           if (dec.cls == OP_D5 && d_cond_skip_q) begin
             dres_q <= a[dacc];                         // ifXX false: result is the accumulator
             st_q <= S_DCOMP;
@@ -723,21 +804,21 @@ module dsp32c_core
             if (p != 4'd0) begin
               logic [2:0] sz;
               sz = (dec.cls == OP_D5 && dec.sub == 4'd2) ? 3'd2 : 3'd4;   // float reads a word
-              mem_req_o <= 1'b1; mem_we_o <= 1'b0; mem_addr_o <= r[p][23:0]; mem_size_o <= sz;
-              r[p] <= (r[p] + dau_inc(yi, sz)) & 32'h00ffffff;
+              mem_req_o <= 1'b1; mem_we_o <= 1'b0; mem_addr_o <= rA[23:0]; mem_size_o <= sz;
+              set_r_raw(p, (rA + dau_inc(rB, yi, sz)) & 32'h00ffffff);
               st_q <= S_DY_W;
             end else begin
               // accumulator operand: doubles direct or deferred; raw forms convert
               if (yi < 3'd4) begin
-                dy_q <= d_mult_y ? amult(yi[1:0], icount_q) : a[yi[1:0]];
-                dword_q <= double_to_dsp(a[yi[1:0]]);
+                dy_q <= d_mult_y ? am_out : a[yi[1:0]];
+                dword_q <= dtd_out;
               end else begin dy_q <= 64'd0; dword_q <= 32'd0; end
               st_q <= S_DCOMP;
             end
           end
         end
         S_DY_W: if (mem_ack_i) begin
-          dy_q <= dsp_to_double(mem_rdata_i);
+          dy_q <= d2d_out;
           dword_q <= mem_rdata_i;
           st_q <= S_DCOMP;
         end
@@ -751,7 +832,7 @@ module dsp32c_core
                 dres_q <= {dy_q[63] ^ op_q[24], dy_q[62:0]};
                 st_q <= S_DFIN;
               end else begin
-                fma_a <= (dec.am == 3'd5) ? DBL_ONE : amult(dec.am[1:0], icount_q);
+                fma_a <= (dec.am == 3'd5) ? DBL_ONE : am_out;
                 fma_x <= dx_q; fma_y <= dy_q;
                 fma_negp <= dec.sgn[0]; fma_negy <= dec.sgn[1];
                 fma_start <= 1'b1;
@@ -772,7 +853,7 @@ module dsp32c_core
             end
             OP_D5: begin
               case (dec.sub)
-                4'd2: begin dres_q <= int_to_double({{16{dword_q[15]}}, dword_q[15:0]}); st_q <= S_DFIN; end   // float
+                4'd2: begin dres_q <= i2d_out; st_q <= S_DFIN; end   // float
                 4'd3, 4'd11: begin                         // int / int24: round half away via +-0.5 then floor/ceil
                   fma_a <= DBL_ONE; fma_x <= dy_q; fma_y <= DBL_HALF;
                   fma_negp <= 1'b0; fma_negy <= r[26][4];
@@ -780,8 +861,8 @@ module dsp32c_core
                 end
                 4'd4: begin dres_q <= dbl_round_to_float(dy_q); st_q <= S_DFIN; end
                 4'd5, 4'd6, 4'd7: begin if (!d_cond_skip_q) dres_q <= dy_q; st_q <= S_DFIN; end
-                4'd10: begin dres_q <= int_to_double({{8{dword_q[23]}}, dword_q[23:0]}); st_q <= S_DFIN; end  // float24
-                4'd14: begin res32 = dword_q ^ 32'h7fffffff; dword_q <= res32; dres_q <= dsp_to_double(res32); st_q <= S_DFIN; end
+                4'd10: begin dres_q <= i2d_out; st_q <= S_DFIN; end  // float24
+                4'd14: begin dword_q <= dword_q ^ 32'h7fffffff; dres_q <= d2d_out; st_q <= S_DFIN; end
                 default: st_q <= S_DFIN;
               endcase
             end
@@ -790,19 +871,9 @@ module dsp32c_core
         end
         S_DFMA_W: if (fma_done) begin
           if (dec.cls == OP_D5) begin
-            // int / int24: floor(val + 0.5) or ceil(val - 0.5), then the integer
-            logic [63:0] rounded; logic signed [31:0] iv;
-            rounded = dbl_floor(fma_res, r[26][4]);
-            iv = dbl_to_int32(rounded);
-            if (dec.sub == 4'd3) res32 = {16'd0, iv[15:0]};           // (int16_t) of a saturated int32
-            else begin
-              // std::clamp<double>(val, -0x800000, 0x7fffff) on an integral value
-              if (iv > 32'sh007fffff) iv = 32'sh007fffff;
-              if (iv < -32'sh00800000) iv = -32'sh00800000;
-              res32 = iv;
-            end
-            dword_q <= res32;
-            dres_q <= (dec.sub == 4'd3) ? dsp_to_double(res32 << 16) : dsp_to_double(res32 << 8);
+            // int / int24: floor(val + 0.5) or ceil(val - 0.5), then the integer (res32_c)
+            dword_q <= res32_c;
+            dres_q <= d2d_out;
           end else dres_q <= fma_res;
           st_q <= S_DFIN;
         end
@@ -812,20 +883,20 @@ module dsp32c_core
           logic [3:0] p; logic raw; logic [31:0] rawv; logic is_word;
           raw = (dec.cls == OP_D5 && (dec.sub == 4'd3 || dec.sub == 4'd11 || dec.sub == 4'd14));
           is_word = (dec.cls == OP_D5 && dec.sub == 4'd3);
-          zval = dz_is_res_q ? dres_q : dy_q;
+          zval = zval_c;
           rawv = dword_q;
-          p = (zp == 4'd15) ? lastp_q : zp;
+          p = dz_p;
           if (op_q[6:0] != 7'd7) begin
             if (p != 4'd0) begin
               if (raw) begin
                 lastp_q <= p;
-                defer_write(r[p][23:0], is_word ? {16'd0, rawv[15:0]} : rawv, !is_word);
-              end else defer_write(r[p][23:0], double_to_dsp(zval), 1'b1);
-              r[p] <= (r[p] + dau_inc(zi, is_word ? 3'd2 : 3'd4)) & 32'h00ffffff;
+                defer_write(rA[23:0], is_word ? {16'd0, rawv[15:0]} : rawv, !is_word);
+              end else defer_write(rA[23:0], dtd_out, 1'b1);
+              set_r_raw(p, (rA + dau_inc(rB, zi, is_word ? 3'd2 : 3'd4)) & 32'h00ffffff);
             end else if (zi < 3'd4) begin
               // accumulator as Z: a noflags set, recorded in the history
               ab_push(zi[1:0]);
-              a[zi[1:0]] <= raw ? (is_word ? dsp_to_double(rawv << 16) : dsp_to_double(rawv)) : zval;
+              a[zi[1:0]] <= raw ? d2d_out : zval;
             end
           end
           st_q <= S_DSET;
@@ -847,7 +918,7 @@ module dsp32c_core
           if (br_pend_q) begin
             if (br_slots_q == 2'd1) begin
               br_pend_q <= 1'b0;
-              pcnext = br_abs_q ? {8'd0, br_imm_q} : (r[br_reg_q] + {8'd0, br_imm_q});
+              pcnext = br_abs_q ? {8'd0, br_imm_q} : (rA + {8'd0, br_imm_q});
               r[15] <= br_abs_q ? {8'd0, br_imm_q} : (pcnext & 32'h00ffffff);
             end else br_slots_q <= br_slots_q - 2'd1;
           end
@@ -855,6 +926,7 @@ module dsp32c_core
         end
         default: st_q <= S_IDLE;
       endcase
+      if (rf_we && (!rf_chk || reg_writeable(rf_idx))) r[rf_idx] <= rf_val;
     end
   end
 endmodule

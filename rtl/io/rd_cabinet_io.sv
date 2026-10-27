@@ -135,9 +135,13 @@ module rd_cabinet_io #(
   end
 
   // ---- serial bytes from frames onto the DUART RX pins -------------------------
-  // one 16-byte FIFO and a byte serialiser per channel, at the DUART's receive rate
+  // one 16-byte FIFO and a byte serialiser per channel, at the DUART's receive
+  // rate.  A frame's up to four bytes per channel are pushed one per clock
+  // after the frame is accepted (fr_buf stays valid until the next frame's
+  // bytes arrive, 17 byte-times later): four write ports cost ~500 ALMs.
   logic [7:0] fa_mem [0:15], fb_mem [0:15];
   logic [4:0] fa_wr, fa_rd, fb_wr, fb_rd;
+  logic [2:0] pa_left, pb_left, pa_idx, pb_idx;
   logic [31:0] sa_acc, sb_acc;
   logic        sa_tick, sb_tick;
   logic [9:0]  sa_shift, sb_shift;
@@ -152,18 +156,21 @@ module rd_cabinet_io #(
   end
   always_ff @(posedge clk_i) begin
     if (rst_i) begin
-      fa_wr <= 0; fa_rd <= 0; fb_wr <= 0; fb_rd <= 0;
+      fa_wr <= 0; fa_rd <= 0; fb_wr <= 0; fb_rd <= 0; pa_left <= 0; pb_left <= 0;
       sa_bits <= 0; sb_bits <= 0; duart_rxa_o <= 1'b1; duart_rxb_o <= 1'b1;
     end else begin
       if (frame_ok) begin
-        logic [2:0] na, nb;
-        na = fr_buf[15][2:0]; nb = fr_buf[16][2:0];
-        if (na > 3'd4) na = 3'd4;
-        if (nb > 3'd4) nb = 3'd4;
-        for (int i = 0; i < 4; i++) if (i < na && (fa_wr - fa_rd + i) < 16) fa_mem[(fa_wr + i) & 15] <= fr_buf[17 + i];
-        for (int i = 0; i < 4; i++) if (i < nb && (fb_wr - fb_rd + i) < 16) fb_mem[(fb_wr + i) & 15] <= fr_buf[21 + i];
-        fa_wr <= fa_wr + ((fa_wr - fa_rd + na) <= 16 ? 5'(na) : 5'(16 - (fa_wr - fa_rd)));
-        fb_wr <= fb_wr + ((fb_wr - fb_rd + nb) <= 16 ? 5'(nb) : 5'(16 - (fb_wr - fb_rd)));
+        pa_left <= (fr_buf[15][2:0] > 3'd4) ? 3'd4 : fr_buf[15][2:0]; pa_idx <= 0;
+        pb_left <= (fr_buf[16][2:0] > 3'd4) ? 3'd4 : fr_buf[16][2:0]; pb_idx <= 0;
+      end else begin
+        if (pa_left != 0) begin
+          if ((fa_wr - fa_rd) < 5'd16) begin fa_mem[fa_wr[3:0]] <= fr_buf[17 + pa_idx]; fa_wr <= fa_wr + 5'd1; end
+          pa_left <= pa_left - 3'd1; pa_idx <= pa_idx + 3'd1;
+        end
+        if (pb_left != 0) begin
+          if ((fb_wr - fb_rd) < 5'd16) begin fb_mem[fb_wr[3:0]] <= fr_buf[21 + pb_idx]; fb_wr <= fb_wr + 5'd1; end
+          pb_left <= pb_left - 3'd1; pb_idx <= pb_idx + 3'd1;
+        end
       end
       // serialiser A: start, 8 data, stop
       if (sa_tick) begin
@@ -187,6 +194,7 @@ module rd_cabinet_io #(
   // receivers at the DUART's transmit rate (16x sampling), 16-byte FIFOs
   logic [7:0] ta_mem [0:15], tb_mem [0:15];
   logic [4:0] ta_wr, ta_rd, tb_wr, tb_rd;
+  logic       pop_a, pop_b;
   logic [31:0] ra_acc, rb_acc;
   logic        ra_tick, rb_tick;
   always_ff @(posedge clk_i) begin
@@ -223,40 +231,57 @@ module rd_cabinet_io #(
           else begin rb_busy <= 0; if (rb_sync && (tb_wr - tb_rd) < 16) begin tb_mem[tb_wr[3:0]] <= rb_sh; tb_wr <= tb_wr + 5'd1; end end
         end
       end
-      if (of_take) begin ta_rd <= ta_rd + 5'(of_na); tb_rd <= tb_rd + 5'(of_nb); end
+      if (pop_a) ta_rd <= ta_rd + 5'd1;
+      if (pop_b) tb_rd <= tb_rd + 5'd1;
     end
   end
 
   // ---- output frame builder and link UART transmitter -----------------------------
+  // The frame is assembled one byte per clock after an input frame is
+  // accepted, the CRC accumulating a byte at a time (a 14-byte CRC chain in
+  // one cycle cost ~400 ALMs), then sent one byte at a time from of_buf.
   logic [7:0]  of_buf [0:15];
   logic [4:0]  of_idx;
-  logic        of_active, of_take;
+  logic        of_active, of_fill;
+  logic [3:0]  of_fi;
   logic [2:0]  of_na, of_nb;
+  logic [7:0]  of_crc, of_byte;
+  logic        of_pop_a, of_pop_b;
   logic [7:0]  tx_sh;
   logic [3:0]  tx_bit;
   logic [15:0] tx_cnt;
   logic        tx_busy;
+  always_comb begin
+    of_pop_a = 1'b0; of_pop_b = 1'b0; of_byte = 8'h00;
+    case (of_fi)
+      4'd0: of_byte = 8'ha5;
+      4'd1: of_byte = 8'h20;
+      4'd2: of_byte = fr_buf[2];
+      4'd3: of_byte = force_i;
+      4'd4: of_byte = outputs_i;
+      4'd5: of_byte = {5'd0, of_na};
+      4'd6: of_byte = {5'd0, of_nb};
+      4'd7, 4'd8, 4'd9, 4'd10:
+        if (of_fi - 4'd7 < {1'b0, of_na}) begin of_byte = ta_mem[ta_rd[3:0]]; of_pop_a = 1'b1; end
+      4'd11, 4'd12, 4'd13, 4'd14:
+        if (of_fi - 4'd11 < {1'b0, of_nb}) begin of_byte = tb_mem[tb_rd[3:0]]; of_pop_b = 1'b1; end
+      default: of_byte = of_crc;
+    endcase
+  end
+  assign pop_a = of_fill && of_pop_a;
+  assign pop_b = of_fill && of_pop_b;
   always_ff @(posedge clk_i) begin
-    of_take <= 1'b0;
-    if (rst_i) begin of_active <= 0; of_idx <= 0; tx_busy <= 0; uart_tx_o <= 1'b1; of_na <= 0; of_nb <= 0; end
+    if (rst_i) begin of_active <= 0; of_fill <= 0; of_idx <= 0; tx_busy <= 0; uart_tx_o <= 1'b1; of_na <= 0; of_nb <= 0; end
     else begin
-      if (frame_ok && !of_active) begin
-        logic [2:0] na, nb; logic [7:0] c;
-        na = 3'((ta_wr - ta_rd) > 4 ? 4 : (ta_wr - ta_rd));
-        nb = 3'((tb_wr - tb_rd) > 4 ? 4 : (tb_wr - tb_rd));
-        of_na <= na; of_nb <= nb; of_take <= 1'b1;
-        of_buf[0] <= 8'ha5; of_buf[1] <= 8'h20; of_buf[2] <= fr_buf[2];
-        of_buf[3] <= force_i; of_buf[4] <= outputs_i; of_buf[5] <= {5'd0, na}; of_buf[6] <= {5'd0, nb};
-        for (int i = 0; i < 4; i++) begin
-          of_buf[7 + i]  <= (i < na) ? ta_mem[(ta_rd + i) & 15] : 8'h00;
-          of_buf[11 + i] <= (i < nb) ? tb_mem[(tb_rd + i) & 15] : 8'h00;
-        end
-        c = crc8(8'h00, 8'h20); c = crc8(c, fr_buf[2]); c = crc8(c, force_i); c = crc8(c, outputs_i);
-        c = crc8(c, {5'd0, na}); c = crc8(c, {5'd0, nb});
-        for (int i = 0; i < 4; i++) c = crc8(c, (i < na) ? ta_mem[(ta_rd + i) & 15] : 8'h00);
-        for (int i = 0; i < 4; i++) c = crc8(c, (i < nb) ? tb_mem[(tb_rd + i) & 15] : 8'h00);
-        of_buf[15] <= c;
-        of_active <= 1'b1; of_idx <= 0;
+      if (frame_ok && !of_active && !of_fill) begin
+        of_na <= 3'((ta_wr - ta_rd) > 4 ? 4 : (ta_wr - ta_rd));
+        of_nb <= 3'((tb_wr - tb_rd) > 4 ? 4 : (tb_wr - tb_rd));
+        of_fill <= 1'b1; of_fi <= 0; of_crc <= 8'h00;
+      end else if (of_fill) begin
+        of_buf[of_fi] <= of_byte;
+        if (of_fi != 0 && of_fi != 4'd15) of_crc <= crc8(of_crc, of_byte);
+        of_fi <= of_fi + 4'd1;
+        if (of_fi == 4'd15) begin of_fill <= 1'b0; of_active <= 1'b1; of_idx <= 0; end
       end
       // transmitter: one byte at a time from of_buf
       if (of_active && !tx_busy) begin
