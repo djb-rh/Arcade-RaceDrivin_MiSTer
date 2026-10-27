@@ -9,9 +9,11 @@
 // per request, data and ack the next clock.
 //
 // Each RAM is written in Quartus's byte-enable template form (a packed
-// array of bytes per word, one always_ff per RAM, read in the same block):
-// anything else here synthesised into flip-flops, 1.1M of them.  A request
-// is a read or a write, never both, so read-during-write is a don't care.
+// array of bytes per word, one always_ff per RAM with the four lane writes
+// spelled out, read in the same block): a for loop over the lanes, or the
+// original lane part-selects, synthesised into flip-flops, 1.1M of them.
+// A request is a read or a write, never both, so read-during-write is a
+// don't care.
 module dsp32c_ram #(
   parameter int RAM1_LOG2 = 18
 ) (
@@ -53,17 +55,32 @@ module dsp32c_ram #(
   wire [RAM1_LOG2-3:0]  a1 = addr_i[RAM1_LOG2-1:2];
   wire [8:0]            a2 = addr_i[10:2];
 
-  logic [3:0][7:0] word0, word1, word2;
+  logic [31:0] word0, word1, word2;
   always_ff @(posedge clk_i) begin
-    if (we0) for (int b = 0; b < 4; b++) if (be[b]) ram0[a0][b] <= wd[b];
+    if (we0) begin
+      if (be[0]) ram0[a0][0] <= wd[0];
+      if (be[1]) ram0[a0][1] <= wd[1];
+      if (be[2]) ram0[a0][2] <= wd[2];
+      if (be[3]) ram0[a0][3] <= wd[3];
+    end
     word0 <= ram0[a0];
   end
   always_ff @(posedge clk_i) begin
-    if (we1) for (int b = 0; b < 4; b++) if (be[b]) ram1[a1][b] <= wd[b];
+    if (we1) begin
+      if (be[0]) ram1[a1][0] <= wd[0];
+      if (be[1]) ram1[a1][1] <= wd[1];
+      if (be[2]) ram1[a1][2] <= wd[2];
+      if (be[3]) ram1[a1][3] <= wd[3];
+    end
     word1 <= ram1[a1];
   end
   always_ff @(posedge clk_i) begin
-    if (we2) for (int b = 0; b < 4; b++) if (be[b]) ram2[a2][b] <= wd[b];
+    if (we2) begin
+      if (be[0]) ram2[a2][0] <= wd[0];
+      if (be[1]) ram2[a2][1] <= wd[1];
+      if (be[2]) ram2[a2][2] <= wd[2];
+      if (be[3]) ram2[a2][3] <= wd[3];
+    end
     word2 <= ram2[a2];
   end
 
