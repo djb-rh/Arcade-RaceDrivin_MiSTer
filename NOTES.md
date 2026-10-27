@@ -1026,3 +1026,51 @@ a server up in a minute.
     sweep again; the one-module Quartus projects and the grouped path
     report (quartus_sta -t with report_timing -npaths 1000, grouped by
     endpoint pair) are the loop.
+
+## 13. First hardware run and the top-of-screen band (2026-10-27)
+
+- The timing-clean bitstream (section 12) boots on the cabinet's MiSTer
+  (10.0.1.80, HDMI, gamepad) straight into the attract mode: self-test,
+  title/track screen, champions, credits, driving demo, dashboard, all
+  from `racedriv.zip` through the MRA. Screenshots via the MiSTer command
+  device (`echo "screenshot x" > /dev/MiSTer_cmd`, PNG under
+  /media/fat/screenshots/racedriv/) are the record. Starting
+  /media/fat/MiSTer with rbf/mra arguments does not load the bitstream;
+  `load_core <mra>` through the command device does.
+- **Band of stale pixels in the top ~64 lines** of every frame whose
+  scene changes (champions screen, driving demo), scrolling with the
+  content: the old frame's picture, with the new frame from line ~64 down.
+  Static screens (title) hide it.
+- Oracle instrumentation that found it: `mame/dpytap.lua` logs every GSP
+  display-register write with VCOUNT (a tap on the whole program space;
+  taps limited to the I/O range never fire, `screen.vpos` is not exposed,
+  so the 34010's VCOUNT register is read instead), and the hd binary got
+  `RD_SRTLOG=<from>-<to>` (harddriv_v.cpp) printing every shift-register
+  transfer. The sim side is `tools/sim.py run --dpylog`: the same writes,
+  the display interrupt, HLT, every MTR/RTM cycle, and an ordering check
+  (a VRAM write accepted with a queued copy on its row).
+- What the game does per frame (MAME and the core agree): at scanline 2
+  (DPYINT) the handler writes DPYADR/DPYSTRT with the scene page (three
+  pages, fffd/fdfd/fbfd, LCSTRT=1), at 284 the dashboard page (f9fc).
+  The core's handler lands at the same scanline as the oracle's, so the
+  band was not a late flip. At scanline 5 the routine at fff43700 sets
+  DPYCTL.SRT, latches the back page's first 8 lines with `PIXT *A0,A0`
+  through the 2-bpp window (02020000), enables the board's shift-register
+  latch, and runs `FILL L` over 31 rows x 8 pixels at PSIZE 1: each row's
+  write is a shift-register store, replicating the top block over the
+  page. MAME issues only those writes.
+- **Cause:** 8 one-bit pixels are a half word, so the field sequencer did
+  a read-modify-write for each row; in SRT mode the read is itself a row
+  transfer (memory to shift register) of the destination block, so every
+  copy had source == destination and gsp_memory retired it as a no-op.
+  The page was never cleared; its rows 8..255 were then redrawn by the
+  scene, rows 0..7 (64 lines) kept the frame drawn three flips earlier.
+  Hard Drivin' does the same with PSIZE 2 (full words, the FILL's wide
+  path, no RMW), which is why the author never saw it.
+- **Fix:** `tms34010_field_sequencer` takes `field_srt_i` (the fabric's
+  registered SRT flag); a shift-register write is written directly,
+  never read, whatever the word coverage. With it the sim's cycle
+  sequence equals MAME's (R 02000000, W 02000000 with the latch off,
+  then W 02001000 ... 0201f000, no reads), the ordering check is clean
+  to 4.4 s, `make test` passes, and the 68010 write comparison is
+  unchanged (exact to write 1,068,752).

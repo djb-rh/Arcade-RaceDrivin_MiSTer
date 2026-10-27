@@ -162,6 +162,8 @@ def cmd_run(args):
             plus.append(f"+service_at={args.service_at}")
     if args.vcd:
         plus.append(f"+vcd={Path(args.vcd).resolve()}")
+    if args.dpylog:
+        plus.append("+dpylog=1")
     cmd = [str(exe)] + plus
     print(" ".join(cmd))
     # FX68K reads its microcode (microrom.mem, nanorom.mem) relative to the
@@ -281,6 +283,7 @@ def main():
     r.add_argument("--service", action="store_true")
     r.add_argument("--service-at", type=int, default=0, metavar="MS", help="press the self-test switch at this time instead of from reset")
     r.add_argument("--opt", action="store_true", help="run the -O3 build")
+    r.add_argument("--dpylog", action="store_true", help="log GSP display-register writes and display interrupts with the raster position (compare with mame/dpytap.lua)")
     r.set_defaults(func=cmd_run)
     m = sub.add_parser("roms")
     m.add_argument("layout")

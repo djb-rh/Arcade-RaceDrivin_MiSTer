@@ -13,6 +13,15 @@
 //   - each partially covered word is read, merged, then written;
 //   - bits outside the requested field are preserved.
 //
+// A shift-register transfer (DPYCTL.SRT, `field_srt_i`) is a row transfer
+// between the VRAM array and its serial register: the data bits are not
+// used and the read half of a read-modify-write would itself transfer the
+// destination row into the register, replacing the source the program
+// latched.  Race Drivin' clears a scene page with a PSIZE-1 FILL of 8 pixels
+// per row in this mode (a half word per row); MAME and the real chip issue
+// only the write cycles, so a partially covered word is written directly,
+// never read, when the request is a shift-register transfer.
+//
 // `word_rmw_lock_o` is asserted from the partial-word read request through
 // its matching write acknowledgement. User's Guide §11.3, page 11-4 makes
 // that pair indivisible while allowing higher-priority cycles between
@@ -40,6 +49,7 @@ module tms34010_field_sequencer
   input  logic [ADDR_WIDTH-1:0]             field_addr_i,
   input  logic [FIELD_SIZE_WIDTH-1:0]       field_size_i,
   input  logic [DATA_WIDTH-1:0]             field_wdata_i,
+  input  logic                              field_srt_i,   // shift-register transfer: no read-modify-write
   output logic [DATA_WIDTH-1:0]             field_rdata_o,
   output logic                              field_ack_o,
 
@@ -73,6 +83,7 @@ module tms34010_field_sequencer
   logic [ADDR_WIDTH-1:0]       field_addr_q;
   logic [FIELD_SIZE_WIDTH-1:0] field_size_q;
   logic [DATA_WIDTH-1:0]       field_wdata_q;
+  logic                        field_srt_q;
 
   // Justification (a): selects the current physical word across a multiword
   // transaction. Two bits cover the specified maximum of three words.
@@ -180,10 +191,12 @@ module tms34010_field_sequencer
       field_addr_q  <= '0;
       field_size_q  <= '0;
       field_wdata_q <= '0;
+      field_srt_q   <= 1'b0;
     end else if ((state_q == FIELD_IDLE) && field_req_i) begin
       field_addr_q  <= field_addr_i;
       field_size_q  <= field_size_i;
       field_wdata_q <= field_wdata_i;
+      field_srt_q   <= field_srt_i;
     end
   end
 
@@ -281,7 +294,7 @@ module tms34010_field_sequencer
       end
 
       FIELD_WRITE_SELECT: begin
-        if (current_word_mask == {LOCAL_WORD_WIDTH{1'b1}})
+        if (current_word_mask == {LOCAL_WORD_WIDTH{1'b1}} || field_srt_q)
           state_d = FIELD_WRITE_WORD;
         else
           state_d = FIELD_WRITE_READ;
@@ -295,7 +308,7 @@ module tms34010_field_sequencer
 
       FIELD_WRITE_WORD: begin
         if (word_restart_i
-            && (current_word_mask != {LOCAL_WORD_WIDTH{1'b1}})) begin
+            && (current_word_mask != {LOCAL_WORD_WIDTH{1'b1}}) && !field_srt_q) begin
           // HOLD may interrupt the otherwise-indivisible pair only between
           // cycles. Suppress the not-yet-issued write and reacquire old data.
           state_d = FIELD_WRITE_READ;
@@ -303,7 +316,7 @@ module tms34010_field_sequencer
           word_req_o   = 1'b1;
           word_we_o    = 1'b1;
           word_wdata_o = merged_word_data;
-          if (current_word_mask != {LOCAL_WORD_WIDTH{1'b1}})
+          if ((current_word_mask != {LOCAL_WORD_WIDTH{1'b1}}) && !field_srt_q)
             word_rmw_lock_o = 1'b1;
           if (word_ack_i) begin
             if (word_index_q == last_word_index)

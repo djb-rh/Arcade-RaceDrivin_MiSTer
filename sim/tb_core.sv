@@ -346,4 +346,51 @@ module tb_core;
     gm_prev_kind  = int'(u_core.u_gsp_memory.cycle_kind_i);
     gm_prev_iaq   = u_core.u_gsp_memory.cycle_iaq_i;
   end
+
+  // ---- display-register log (+dpylog) -------------------------------------
+  // Every GSP I/O write to the display registers and every display
+  // interrupt, with the 34010's VCOUNT and the scan-out raster line, in the
+  // same form as mame/dpytap.lua prints them, for a frame-by-frame
+  // comparison of when the game moves the display address.
+  bit dpylog = 0;
+  initial dpylog = $test$plusargs("dpylog");
+  logic [15:0] dpylog_last_di_v = 16'hffff;
+  bit dpylog_hlt_q = 0;
+  always @(posedge clk_core) begin
+    if (dpylog && u_core.gsp_cycle_req && u_core.gsp_cycle_ack &&
+        u_core.gsp_cycle_kind == tms34010_pkg::LOCAL_CYCLE_IO_WRITE &&
+        u_core.gsp_cycle_addr[31:9] == 23'h600000) begin
+      $display("[dpy] t=%0.5f v=%0d raster=%0d io%03x <= %04x pc=%08x", $time / 1.0e12,
+               u_core.u_gsp.u_tms34010.u_core.u_io_regs.vcount_o, u_core.u_scanout.raster_v_q,
+               u_core.gsp_cycle_addr[8:0] & 9'h1f0, u_core.gsp_cycle_wdata, u_core.gsp_pc);
+    end
+    if (dpylog && u_core.u_gsp.u_tms34010.u_core.u_io_regs.video_dpyint_pulse &&
+        u_core.u_gsp.u_tms34010.u_core.u_io_regs.vcount_o != dpylog_last_di_v) begin
+      dpylog_last_di_v = u_core.u_gsp.u_tms34010.u_core.u_io_regs.vcount_o;
+      $display("[dpy] t=%0.5f v=%0d raster=%0d DI", $time / 1.0e12,
+               u_core.u_gsp.u_tms34010.u_core.u_io_regs.vcount_o, u_core.u_scanout.raster_v_q);
+    end
+    // shift-register transfers as the GSP issues them (R: row to shift
+    // register, W: shift register to row), and the accept of a VRAM write
+    // whose row still has a queued copy (must never happen: the copy would
+    // land on top of the write)
+    if (dpylog && u_core.gsp_cycle_req && u_core.gsp_cycle_ack &&
+        (u_core.gsp_cycle_kind == tms34010_pkg::LOCAL_CYCLE_PIXEL_MTR ||
+         u_core.gsp_cycle_kind == tms34010_pkg::LOCAL_CYCLE_PIXEL_RTM)) begin
+      $display("[srt] t=%0.5f v=%0d %s %08x pc=%08x q=%0d", $time / 1.0e12,
+               u_core.u_gsp.u_tms34010.u_core.u_io_regs.vcount_o,
+               (u_core.gsp_cycle_kind == tms34010_pkg::LOCAL_CYCLE_PIXEL_MTR) ? "R" : "W",
+               u_core.gsp_cycle_addr, u_core.gsp_pc, u_core.u_gsp_memory.srt_q_valid_q);
+    end
+    if (dpylog && u_core.u_gsp_memory.vram_accept && u_core.u_gsp_memory.word_write &&
+        (u_core.u_gsp_memory.srt_match != '0 || u_core.u_gsp_memory.srt_eng_hit)) begin
+      $display("[srt] t=%0.5f ORDER VIOLATION: write %08x accepted with a queued copy on its row", $time / 1.0e12,
+               u_core.gsp_cycle_addr);
+    end
+    if (dpylog && u_core.u_gsp.u_tms34010.u_core.io_hlt != dpylog_hlt_q) begin
+      dpylog_hlt_q = u_core.u_gsp.u_tms34010.u_core.io_hlt;
+      $display("[dpy] t=%0.5f v=%0d raster=%0d HLT=%0d", $time / 1.0e12,
+               u_core.u_gsp.u_tms34010.u_core.u_io_regs.vcount_o, u_core.u_scanout.raster_v_q, dpylog_hlt_q);
+    end
+  end
 endmodule

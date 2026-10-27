@@ -184,6 +184,7 @@ module tms34010_memory_fabric
     .field_addr_i    (cpu_request_addr_q),
     .field_size_i    (cpu_request_size_q),
     .field_wdata_i   (cpu_request_wdata_q),
+    .field_srt_i     (cpu_request_srt_q),
     .field_rdata_o   (sequenced_field_rdata),
     .field_ack_o     (sequenced_field_ack),
     .word_req_o      (cpu_word_req),
