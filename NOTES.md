@@ -950,3 +950,24 @@ a server up in a minute.
     Still one rounding; 200,000 C-library fma vectors, 0 mismatches.
   Every change checked lock-step against MAME (boot 3M instructions, two
   gameplay traces of 2M) before the next build.
+- **Timing (core clock 48 MHz, 20.8 ns).** First analysis: Fmax 17.9 MHz.
+  The paths, in order, and what was done:
+  - main_bus cockpit wheel scaling for the 8-bit ADC, a combinational
+    divider (55 ns): a registered constant multiply over three clocks.
+  - DSP32C int/int24 (floor, saturating int32, clamp, DSP float in one
+    cycle, 38 ns): one state each. FMA leading-one count + normalise +
+    round (33 ns): the count gets its own clock. CAU execute (decode, read
+    mux, ALU, write, 23 ns): decode registered with the fetch, ALU in its
+    own state, pointer post-increments applied a state later from the
+    value read. Lock-step with MAME unchanged throughout.
+  - TG68K internal paths (-2.9 ns): legitimately multicycle, the CPU
+    advances on a one-in-18 clock enable; SDC declares them two-cycle.
+  - After those: 42.2 MHz then -2.2 ns, all in the inherited GSP core and
+    its cache fabric (decoded.iclass -> fill setup, memory fabric request
+    -> gsp_memory cache valid/write queue), with 2-2.7 ns interconnect
+    hops from the 96% fill. The Hard Drivin' SDC relaxes decoded -> regfile
+    / memory-request / fill_row_base to two cycles (decoded is captured in
+    CORE_DECODE_WAIT and used from CORE_DISPATCH on) but not these
+    endpoints. Open: whether they are multicycle by the same argument, or
+    whether more logic reduction / placement seeds close them. The RBF at
+    -2.2 ns (10% of the period, slow 100C model) is worth a hardware try.
