@@ -570,6 +570,7 @@ module emu (
 
   harddrivin_milestone #(
     .COCKPIT(COCKPIT),
+    .MSP(1'b0),         // Race Drivin' has no MSP (its 34010 slot is the DSK board)
     .DIAG_FULL(1'b0),   // verification builds keep the GSP boot, runtime and DI-latency pages
     // The 200E/210E power-up contents arrive from the MRA (download index 3)
     // through the NVRAM bridge, then the .nvm save file if there is one; no

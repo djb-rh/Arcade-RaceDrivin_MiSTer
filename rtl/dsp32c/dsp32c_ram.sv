@@ -7,6 +7,11 @@
 // accesses ignore them, as MAME's native-width reads do.  Unmapped reads
 // return 0xffffffff (unmap_value_high), unmapped writes vanish.  One access
 // per request, data and ack the next clock.
+//
+// Each RAM is written in Quartus's byte-enable template form (a packed
+// array of bytes per word, one always_ff per RAM, read in the same block):
+// anything else here synthesised into flip-flops, 1.1M of them.  A request
+// is a read or a write, never both, so read-during-write is a don't care.
 module dsp32c_ram #(
   parameter int RAM1_LOG2 = 18
 ) (
@@ -19,17 +24,19 @@ module dsp32c_ram #(
   output logic [31:0] rdata_o,      // right-aligned for sizes 1 and 2
   output logic        ack_o
 );
-  logic [31:0] ram0 [0:2047];                      // 0x000000-0x001fff
-  logic [31:0] ram1 [0:(1 << (RAM1_LOG2 - 2)) - 1];  // 0x600000-
-  logic [31:0] ram2 [0:511];                       // 0xfff800-0xffffff
+  localparam int RAM1_WORDS = 1 << (RAM1_LOG2 - 2);
+
+  logic [3:0][7:0] ram0 [0:2047];            // 0x000000-0x001fff
+  logic [3:0][7:0] ram1 [0:RAM1_WORDS-1];    // 0x600000-
+  logic [3:0][7:0] ram2 [0:511];             // 0xfff800-0xffffff
 
   logic sel0, sel1, sel2;
   assign sel0 = addr_i[23:13] == 11'd0;
   assign sel1 = addr_i[23:RAM1_LOG2] == (24'h600000 >> RAM1_LOG2);
   assign sel2 = addr_i[23:11] == 13'h1fff;
 
-  logic [3:0] be;
-  logic [31:0] wd;
+  logic [3:0]      be;
+  logic [3:0][7:0] wd;
   always_comb begin
     be = 4'b0000; wd = wdata_i;
     case (size_i)
@@ -39,28 +46,40 @@ module dsp32c_ram #(
     endcase
   end
 
-  logic [31:0] word0, word1, word2, word;
+  wire we0 = req_i && we_i && sel0;
+  wire we1 = req_i && we_i && sel1;
+  wire we2 = req_i && we_i && sel2;
+  wire [10:0]           a0 = addr_i[12:2];
+  wire [RAM1_LOG2-3:0]  a1 = addr_i[RAM1_LOG2-1:2];
+  wire [8:0]            a2 = addr_i[10:2];
+
+  logic [3:0][7:0] word0, word1, word2;
+  always_ff @(posedge clk_i) begin
+    if (we0) for (int b = 0; b < 4; b++) if (be[b]) ram0[a0][b] <= wd[b];
+    word0 <= ram0[a0];
+  end
+  always_ff @(posedge clk_i) begin
+    if (we1) for (int b = 0; b < 4; b++) if (be[b]) ram1[a1][b] <= wd[b];
+    word1 <= ram1[a1];
+  end
+  always_ff @(posedge clk_i) begin
+    if (we2) for (int b = 0; b < 4; b++) if (be[b]) ram2[a2][b] <= wd[b];
+    word2 <= ram2[a2];
+  end
+
   logic [1:0]  lane_q;
   logic [2:0]  size_q;
-  logic        hit_q;
+  logic        hit_q, sel0_q, sel1_q;
   always_ff @(posedge clk_i) begin
     ack_o  <= req_i;
     lane_q <= addr_i[1:0];
     size_q <= size_i;
     hit_q  <= sel0 || sel1 || sel2;
-    if (req_i && we_i) begin
-      for (int b = 0; b < 4; b++) if (be[b]) begin
-        if (sel0) ram0[addr_i[12:2]][b*8 +: 8] <= wd[b*8 +: 8];
-        if (sel1) ram1[addr_i[RAM1_LOG2-1:2]][b*8 +: 8] <= wd[b*8 +: 8];
-        if (sel2) ram2[addr_i[10:2]][b*8 +: 8] <= wd[b*8 +: 8];
-      end
-    end
-    word0 <= ram0[addr_i[12:2]];
-    word1 <= ram1[addr_i[RAM1_LOG2-1:2]];
-    word2 <= ram2[addr_i[10:2]];
+    sel0_q <= sel0;
+    sel1_q <= sel1;
   end
-  logic sel0_q, sel1_q;
-  always_ff @(posedge clk_i) begin sel0_q <= sel0; sel1_q <= sel1; end
+
+  logic [31:0] word;
   always_comb begin
     word = !hit_q ? 32'hffffffff : sel0_q ? word0 : sel1_q ? word1 : word2;
     case (size_q)

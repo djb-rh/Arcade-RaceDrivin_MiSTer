@@ -228,14 +228,17 @@ module mc68681 #(
 
   // duart_channel::read_rx_fifo side effects
   function automatic chan_t fifo_pop(input chan_t c);
-    chan_t n; n = c;
+    chan_t n; logic [15:0] head;
+    n = c;
     if (n.fifo_num == 3'd0) return n;
     n.fifo_rd = n.fifo_rd + 2'd1;
     n.fifo_num = n.fifo_num - 3'd1;
     if (n.fifo_num == 3'd2) n.sr &= ~SR_FFULL;
     if (!n.mr1[5]) n.sr &= ~(SR_BREAK | SR_FRAME | SR_PARITY);
+    // Quartus cannot bit-select a function call result directly.
+    head = fifo_at(n, n.fifo_rd);
     if (n.fifo_num == 3'd0) n.sr &= ~SR_RXRDY;
-    else n.sr |= fifo_at(n, n.fifo_rd)[15:8];
+    else n.sr |= head[15:8];
     return n;
   endfunction
 

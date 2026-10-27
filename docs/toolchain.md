@@ -13,22 +13,47 @@
 
 ## Synthesis (x86 Linux build host)
 
-Decided: Quartus Prime Lite 24.1 on the user's own x86 Linux machine, which
-is not yet available (expected within days of 2026-10-24). To fill in when it
-arrives:
+Quartus Prime Lite 24.1 runs on a rented x86 Linux server, driven over SSH
+from the Mac. The user's own x86 box never materialised and AWS held the
+account in a verification block for days, so the host is a Hetzner Cloud
+server (2026-10-26):
 
-- Hostname / SSH user:
-- Distro and RAM:
-- Quartus install path and `quartus_sh` on PATH:
-- `make.local` on the Mac with `BUILD_HOST=user@host` and `BUILD_DIR=...`.
+- Hetzner Cloud project `rd-mister`, server `rd-mister-build`, Ashburn,
+  type CPX41 (8 shared AMD vCPU, 16 GB, 240 GB NVMe), Ubuntu 24.04, SSH as
+  `root` with the Mac's `~/.ssh/id_ed25519` key. The IP changes when the
+  server is recreated; it lives only in the untracked `make.local`.
+- The server bills while it exists, powered off or not, so delete it after
+  a build session and recreate it next time: the OS prerequisites plus the
+  Quartus install take about twenty minutes to redo.
+- Prerequisites: `apt-get install rsync make libglib2.0-0 libxext6 libx11-6
+  libxrender1 libxtst6 libxi6 libfontconfig1 libfreetype6 libsm6 libice6
+  libncurses6 libncurses5-dev libstdc++6 libpng16-16t64 libxft2 libbz2-1.0
+  libxcb1 xz-utils bzip2 zlib1g`.
+- Quartus Lite 24.1 installed unattended from `QuartusLiteSetup-24.1std.0.1077-linux.run`
+  with `cyclonev-24.1std.0.1077.qdz` in the same directory:
+  `--mode unattended --unattendedmodeui none --accept_eula 1
+  --installdir /opt/intelFPGA_lite/24.1std --disable-components
+  quartus_help,questa_fe,questa_fse`. `quartus_sh` is
+  `/opt/intelFPGA_lite/24.1std/quartus/bin/quartus_sh`.
+- Getting the installer: Altera's download pages need a free Altera
+  account, and the file host (`download.altera.com`, Akamai) refuses curl
+  and wget outright, so the two files have to be downloaded in a real
+  browser and copied to the server with rsync. Published SHA-1s:
+  installer `62a899e695d4ea478bc51850867cf6222d9589cf`, Cyclone V pack
+  `a361c6ab1aba00f6385fc8deb8b81045c3f9ad7c`.
+- `make.local` on the Mac (ignored by git):
 
-`make build` rsyncs the tree there, runs `quartus_sh --flow compile RaceDrivin`
-and copies `output_files/` back. The imported project still needs
-`generated/zram_cockpit_200e.hex` and `_210e.hex` (from
-`tools/hd/prepare_nvram.py <harddriv.zip>`) until M1 replaces the baked ZRAM
-image with the MRA index-3 download.
+```
+BUILD_HOST = root@<server ip>
+BUILD_DIR = rd-mister
+QUARTUS_SH = /opt/intelFPGA_lite/24.1std/quartus/bin/quartus_sh
+```
 
-Fallback if the box is unavailable: Docker Desktop with Rosetta on the Mac
+`make build` rsyncs the tree there (excluding `.git`, Quartus outputs,
+`sim/build` and `make.local`), runs `quartus_sh --flow compile RaceDrivin`
+and copies `output_files/` back.
+
+Fallback if no server is available: Docker Desktop with Rosetta on the Mac
 (Rosetta is not installed here yet), using an image with Quartus Lite 24.1.
 
 ## MAME oracle

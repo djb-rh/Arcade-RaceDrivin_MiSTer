@@ -39,7 +39,7 @@ machines:
 sync:
 	@test -n "$(BUILD_HOST)" || (echo 'Set BUILD_HOST=user@host (see docs/toolchain.md)'; exit 2)
 	rsync -az --delete --exclude .git --exclude output_files --exclude db --exclude incremental_db \
-		--exclude generated ./ "$(BUILD_HOST):$(BUILD_DIR)/"
+		--exclude generated --exclude sim/build --exclude make.local ./ "$(BUILD_HOST):$(BUILD_DIR)/"
 
 build: sync
 	ssh "$(BUILD_HOST)" "cd $(BUILD_DIR) && $(QUARTUS_SH) --flow compile RaceDrivin"

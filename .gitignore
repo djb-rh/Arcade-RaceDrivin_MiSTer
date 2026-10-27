@@ -41,3 +41,6 @@ hw/**/~*.lck
 __pycache__/
 .DS_Store
 .claude/
+
+# per-machine build host settings (see docs/toolchain.md)
+/make.local
