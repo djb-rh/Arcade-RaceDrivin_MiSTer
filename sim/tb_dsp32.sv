@@ -143,7 +143,10 @@ module tb_dsp32;
 
   // a trace window that starts mid-stream: take the first record's full state
   task automatic load_state();
-    for (int i = 0; i < 32; i++) u_core.r[i] = exp_r[i];
+    for (int i = 0; i < 32; i++) begin
+      u_core.rA_mem[i] = exp_r[i]; u_core.rB_mem[i] = exp_r[i]; u_core.rC_mem[i] = exp_r[i];
+    end
+    u_core.r_valid_q = 32'hffffffff; u_core.pc_q = exp_r[15];
     for (int i = 0; i < 4; i++) u_core.a[i] = exp_a[i];
     u_core.nzc_q = exp_nzc; u_core.vfl_q = exp_v; u_core.vu_q = exp_vu[1:0]; u_core.nz_q = exp_nz;
     u_core.par_q = exp_pio[0]; u_core.pare_q = exp_pio[1][7:0]; u_core.pdr_q = exp_pio[2]; u_core.pdr2_q = exp_pio[3];

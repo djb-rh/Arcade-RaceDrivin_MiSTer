@@ -59,7 +59,27 @@ module dsp32c_core
   output logic        running_o
 );
   // ---- architectural state -------------------------------------------------
+  // r0-r31: three MLAB copies (one per read port, Quartus's no_rw_check
+  // LUT-RAM template; as flops with three 32:1 read muxes they were ~800
+  // ALMs), the PC (r15) a flop of its own, and a valid bit per entry
+  // standing in for reset: an entry reads as its reset value until first
+  // written (0, r22 all ones, r23 one; device_reset clears r0/r16/r22/r23).
+  (* ramstyle = "MLAB, no_rw_check" *) logic [31:0] rA_mem [0:31];
+  (* ramstyle = "MLAB, no_rw_check" *) logic [31:0] rB_mem [0:31];
+  (* ramstyle = "MLAB, no_rw_check" *) logic [31:0] rC_mem [0:31];
+  logic [31:0] r_valid_q;
+  logic [31:0] pc_q;
+  function automatic logic [31:0] r_reset_value(input logic [4:0] idx);
+    return (idx == 5'd22) ? 32'hffffffff : (idx == 5'd23) ? 32'd1 : 32'd0;
+  endfunction
+  function automatic logic [31:0] r_read(input logic [4:0] idx, input logic [31:0] mem);
+    return (idx == 5'd15) ? pc_q : r_valid_q[idx] ? mem : r_reset_value(idx);
+  endfunction
+`ifdef VERILATOR
+  // the lock-step test's view of the file (sim only: 32 more read ports)
   logic [31:0] r [0:31];
+  always_comb for (int i = 0; i < 32; i++) r[i] = r_read(5'(i), rA_mem[i]);
+`endif
   logic [31:0] nzc_q, vfl_q;          // MAME m_nzcflags / m_vflags
   logic [63:0] a [0:3];
   logic [63:0] nz_q;                  // MAME m_NZflags (a double)
@@ -203,12 +223,13 @@ module dsp32c_core
       S_DY:   begin rdA_idx = {1'b0, dy_p}; rdB_idx = {2'b10, yi}; end
       S_DFIN: begin rdA_idx = {1'b0, dz_p}; rdB_idx = {2'b10, zi}; end
       S_DONE: rdA_idx = br_reg_q;
+      S_DCOMP, S_DROUND_W: rdC_idx = 5'd26;    // DAUC rounding mode
       default: ;
     endcase
   end
-  assign rA = r[rdA_idx];
-  assign rB = r[rdB_idx];
-  assign rC = r[rdC_idx];
+  assign rA = r_read(rdA_idx, rA_mem[rdA_idx]);
+  assign rB = r_read(rdB_idx, rB_mem[rdB_idx]);
+  assign rC = r_read(rdC_idx, rC_mem[rdC_idx]);
 
   // One instance each of the DSP<->double conversions and of the
   // accumulator-history lookup, their inputs chosen by state (seven copies
@@ -225,7 +246,7 @@ module dsp32c_core
   // int / int24 result over three states (S_DROUND_W, S_DINT, S_DZ): the
   // floor/ceil of val +- 0.5, the saturated and clamped int32, then the
   // DSP float of it; in one cycle the chain was a 38 ns path
-  assign rounded_c = dbl_floor(fres_q, r[26][4]);
+  assign rounded_c = dbl_floor(fres_q, rC[4]);      // rC = r26 in S_DROUND_W
   assign iv_c      = dbl_to_int32(rounded_q);
   always_comb begin
     logic signed [31:0] iv;
@@ -384,13 +405,13 @@ module dsp32c_core
   endtask
 
   task automatic device_reset();
-    r[15] <= 32'd0;
+    pc_q <= 32'd0;
     pcw_q <= pcw_q & 16'h03ff;
     pcr_q <= 16'h0001;
     esr_q <= 16'h0000;
     emr_q <= 16'hffff;
     pif_o <= 1'b0; pdf_o <= 1'b0;
-    r[0] <= 32'd0; r[16] <= 32'd0; r[22] <= 32'hffffffff; r[23] <= 32'd1;
+    r_valid_q[0] <= 1'b0; r_valid_q[16] <= 1'b0; r_valid_q[22] <= 1'b0; r_valid_q[23] <= 1'b0;
     for (int k = 0; k < 4; k++) begin ab_valid[k] <= 1'b0; mb_valid[k] <= 1'b0; end
   endtask
 
@@ -441,7 +462,7 @@ module dsp32c_core
     reset_n_q  <= reset_n_i;
     rf_we = 1'b0; rf_chk = 1'b0; rf_idx = 5'd0; rf_val = 32'd0;
     if (rst_i) begin
-      for (int k = 0; k < 32; k++) r[k] <= 32'd0;
+      r_valid_q <= 32'd0; pc_q <= 32'd0;
       for (int k = 0; k < 4; k++) begin a[k] <= 64'd0; ab_valid[k] <= 1'b0; mb_valid[k] <= 1'b0; end
       nzc_q <= 0; vfl_q <= 0; nz_q <= 0; vu_q <= 0;
       par_q <= 0; pdr_q <= 0; pdr2_q <= 0; pir_q <= 0; pcr_q <= 0; emr_q <= 0; esr_q <= 0; pcw_q <= 0; pare_q <= 0;
@@ -575,8 +596,8 @@ module dsp32c_core
         end
         S_DEFER_W: if (mem_ack_i) st_q <= S_FETCH;
         S_FETCH: begin
-          mem_req_o <= 1'b1; mem_we_o <= 1'b0; mem_addr_o <= r[15][23:0]; mem_size_o <= 3'd4;
-          pc_fetch_q <= r[15][23:0];
+          mem_req_o <= 1'b1; mem_we_o <= 1'b0; mem_addr_o <= pc_q[23:0]; mem_size_o <= 3'd4;
+          pc_fetch_q <= pc_q[23:0];
           st_q <= S_FETCH_W;
         end
         S_FETCH_W: if (mem_ack_i) begin
@@ -588,7 +609,7 @@ module dsp32c_core
         // ------------------------------------------------------------- execute
         S_EXEC: begin
           st_q <= S_DONE;
-          r[15] <= r[15] + 32'd4;                   // MAME: PC += 4 before the handler runs
+          pc_q <= pc_q + 32'd4;                     // MAME: PC += 4 before the handler runs
           dfl = deferred_flags();
           case (dec.cls)
             OP_ILLEGAL: ;
@@ -881,7 +902,7 @@ module dsp32c_core
                 4'd2: begin dres_q <= i2d_out; st_q <= S_DFIN; end   // float
                 4'd3, 4'd11: begin                         // int / int24: round half away via +-0.5 then floor/ceil
                   fma_a <= DBL_ONE; fma_x <= dy_q; fma_y <= DBL_HALF;
-                  fma_negp <= 1'b0; fma_negy <= r[26][4];
+                  fma_negp <= 1'b0; fma_negy <= rC[4];   // rC = r26 in S_DCOMP
                   fma_start <= 1'b1;
                 end
                 4'd4: begin dres_q <= dbl_round_to_float(dy_q); st_q <= S_DFIN; end
@@ -943,14 +964,20 @@ module dsp32c_core
             if (br_slots_q == 2'd1) begin
               br_pend_q <= 1'b0;
               pcnext = br_abs_q ? {8'd0, br_imm_q} : (rA + {8'd0, br_imm_q});
-              r[15] <= br_abs_q ? {8'd0, br_imm_q} : (pcnext & 32'h00ffffff);
+              pc_q <= br_abs_q ? {8'd0, br_imm_q} : (pcnext & 32'h00ffffff);
             end else br_slots_q <= br_slots_q - 2'd1;
           end
           st_q <= S_IDLE;
         end
         default: st_q <= S_IDLE;
       endcase
-      if (rf_we && (!rf_chk || reg_writeable(rf_idx))) r[rf_idx] <= rf_val;
+      if (rf_we && (!rf_chk || reg_writeable(rf_idx))) begin
+        if (rf_idx == 5'd15) pc_q <= rf_val;
+        else begin
+          rA_mem[rf_idx] <= rf_val; rB_mem[rf_idx] <= rf_val; rC_mem[rf_idx] <= rf_val;
+          r_valid_q[rf_idx] <= 1'b1;
+        end
+      end
     end
   end
 endmodule
