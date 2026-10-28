@@ -378,8 +378,9 @@ Alternatives considered: STM32G4 (five excellent 12-bit ADCs with hardware
 oversampling to 16 bits, 5 V-tolerant pins, encoder timers, five USARTs; no
 Wi-Fi) would be the better chip if the Wi-Fi bridge is dropped; RP2350
 (PIO for anything, two mediocre ADCs, Wi-Fi only on the Pico 2 W module)
-brings nothing the S3 lacks. Verdict: ESP32-S3 with an external ADC. If the
-link latency measurement (PLAN.md 3.2) ends up forbidding Wi-Fi for the
+brings nothing the S3 lacks. Verdict: ESP32-S3 with an external ADC. The radio
+is also what makes the board a link bridge in its own right (3.12); if the
+link latency measurement (PLAN.md 3.2) ends up forbidding radio for the
 link, the Wi-Fi still earns its place for the pod stream and updates.
 
 ### 3.4 Analog front end
@@ -525,6 +526,136 @@ connector pins; the link cable runs across the floor between cabinets.
   edge. Mounting holes to sit on the original main-board standoffs if the
   cabinet's board tray is reused (measure the A045988/A046901 outline).
 
+### 3.12 Link transport: cable, ESP-NOW, LAN
+
+The two RS-232 channels must work three ways: over the factory cable to a
+real cabinet or to another MiSTer cabinet, over the air to an ESP32 bridge
+sitting on a real cabinet's J2, and over the air to another board of this
+design. The bytes already pass through the ESP32 in every case (core, user
+port, board, transceiver), so the board *is* a link bridge with extra
+connectors, and the transport is a routing choice inside one firmware. The
+same firmware, minus the cabinet I/O, runs on the real-hardware bridges.
+
+**Route not taken: the MiSTer's own network.** The framework gives every
+core one serial port into Linux: the `UART_TXD`/`UART_RXD` ports that
+`RaceDrivin.sv` currently ties off go to the HPS UART in `sys/sys_top.v`
+(a tty in Linux). A userspace daemon on the MiSTer could forward link bytes
+over the MiSTer's Wi-Fi dongle, with one IP address in the cabinet and no
+kernel change. Rejected: it is a single channel (serial B and the pod
+stream stay on the board anyway), it needs a second link path in the core
+(HPS for air, user port for cable) kept in step with the first, it needs
+the bridge protocol implemented twice (ESP-IDF and Linux), and the Linux
+tty adds scheduler jitter on top of the radio's. The user port itself can
+never carry a network: every pin of its USB3 socket is FPGA GPIO. A USB
+network-class device on the hub is out too: the MiSTer kernel config
+(`arch/arm/configs/MiSTer_defconfig`, branch MiSTer-v6.18) has
+`CONFIG_USB_NET_DRIVERS` unset, so no cdc_ether/ncm/rndis host driver.
+
+**Transport order.**
+
+1. **Cable** (default). J2/J3 through the SP3232 as in 3.10. The ESP32
+   is a transparent pass-through at 38,400 8N1; byte latency is the
+   transceiver's, a few microseconds, so this path matches the original.
+2. **ESP-NOW** (preferred radio mode). Espressif's connectionless
+   peer-to-peer protocol between ESP32s: 802.11 vendor-specific action
+   frames on a fixed 2.4 GHz channel, no access point, no DHCP, no IP
+   address, unicast frames acknowledged and retried at the MAC level,
+   up to 250 bytes of payload per frame. Latency is one air transaction,
+   typically 1 to 3 ms, with far less jitter than a LAN hop through a
+   router. The board is not on the home network at all in this mode.
+   Every link endpoint in this plan is an ESP32, so nothing is lost by
+   excluding non-ESP nodes.
+3. **LAN UDP** (fallback for distance). Both ends join the house Wi-Fi as
+   stations and exchange the same frames over UDP. This is the one mode
+   in which the board holds an IP address beside the MiSTer's. Accepted
+   only where ESP-NOW cannot reach.
+
+**Frame design, common to modes 2 and 3.** A frame carries a channel id
+(A or B), a 16-bit sequence number, a sender timestamp, and the bytes
+received from the core since the previous frame; send on a 2 ms tick or
+when 32 bytes are waiting, whichever first (at 38,400 8N1 a channel yields
+at most about 8 bytes per 2 ms). The receiver re-serialises the bytes to
+its core at 38,400 through a de-jitter buffer whose depth is a setting
+(start at 4 ms) and whose correct value comes from open question 9. A gap
+in sequence numbers is logged, never retransmitted: the factory cable had
+no retransmission either, so the games' own protocol has to survive a
+lost byte, and a late retransmission would be worse than a hole. The pod
+stream on serial B is one-way and tolerates loss; the link on serial A is
+what open question 9 measures.
+
+**Addressing and pairing.** Peers are MAC addresses in the ESP32's NVS.
+The board-address DIP of 3.11 names this node; a pairing button (hold 3 s)
+broadcasts a pairing frame for 30 s and stores whoever answers, so two
+cabinets pair with two button presses and no PC. Pairings persist across
+power cycles. Encrypted ESP-NOW peers (shared LMK) keep a neighbour's
+cabinet from joining by accident; the limit of six encrypted peers covers
+a Panorama trio with room to spare.
+
+**Channel plan.** ESP-NOW uses one fixed channel that every node must
+share. When a board is only an ESP-NOW node, pick a 2.4 GHz channel away
+from the house access point. When a board also joins the house Wi-Fi (LAN
+mode, or firmware update over the air), ESP-NOW is forced onto the access
+point's channel. Firmware updates therefore run in a separate "service"
+mode entered from the pairing button or the USB console, so normal play
+never needs the board on the LAN. The MiSTer's own dongle should be a 5
+GHz-capable one (next paragraph) so its traffic is off the 2.4 GHz band
+the link uses.
+
+**Mode selection.** Rev A: a 3-position DIP (cable, ESP-NOW, LAN), read at
+boot and reported in a status LED pattern. An OSD-driven selection over
+protocol v2 can come later once the frame layout is final; it costs one
+spare output bit and a mode field in the input frame.
+
+**The real-hardware bridge.** Same firmware, a smaller board: ESP32-S3
+module, one SP3232, the 11-pin J2 header and the DB-25 pigtail footprint,
+pairing button, address DIP, USB-C. It cannot be powered from J2-10 (+12 V
+through 10 ohm drops 1 V at 100 mA and is a sense line, so the rule of 1.5
+stands: never a supply); it takes +5 V from the cabinet's P1 or a wall
+adapter. Note for later: the original main board's
+link-present sense on J2-11 means a real cabinet with a bridge plugged in
+sees "cable present" even while the far end is away.
+
+**The MiSTer's own Wi-Fi** (needed regardless: no cable reaches the
+cabinet's spot). The ESP32 cannot provide it (above). Dongle guidance,
+from the MiSTer docs, the MiSTer Bible, the forum's recommended-dongle
+thread, and the drivers built into the MiSTer-v6.18 kernel config:
+
+- The kernel builds, as modules, Realtek rtl8192cu, rtl8192du, rtl8187,
+  the generic rtl8xxxu, rtw88 with USB front-ends for 8723DU, 8811/8821AU,
+  8812/8822BU, 8821CU, 8822CU, 8814AU and 8812AU, and rtw89 for 8851BU and
+  8852BU; MediaTek mt7601u and mt7663u; Ralink rt2800usb; Atheros
+  ath9k_htc, ath10k USB, carl9170; Broadcom brcmfmac USB; Marvell mwifiex
+  USB. Realtek 8192EU falls to the generic rtl8xxxu driver and is slow.
+- Named as working by the docs or the Bible: ASUS USB-AC53 Nano rev A1
+  (RTL8822BU, 5 GHz), Edimax EW-7822ULC (USB ID 7392:b822, RTL8822BU, 5
+  GHz), TP-Link Archer T3U (RTL8812BU, 5 GHz), TP-Link Archer T2U nano and
+  Netgear A6100 (RTL8811AU, 5 GHz), Netgear A6150, D-Link DWA-181, D-Link
+  DWA-171 rev A1 only (rev C1, USB ID 0bda:1a2b, enumerates as a CD-ROM
+  first and is reported not to work out of the box), Edimax EW-7811UN
+  (7392:7811, RTL8188CUS, 2.4 GHz only), Edimax EW-7612UAn v2 (RTL8192CU),
+  CanaKit Raspberry Pi dongle (148f:5370, rt2800usb, 2.4 GHz only),
+  TP-Link TL-WN823N v2 (RTL8192EU, needs `rtl8192eu_nic.bin` copied to
+  `/lib/firmware/rtlwifi`, slow) and v3.
+- Forum experience: rtl8192cu and mt7601u sticks are the ones people call
+  rock solid; combo Wi-Fi+Bluetooth sticks (RTL8821CU) work for some and
+  misbehave for others, and the Bible wants Bluetooth on its own dongle;
+  throughput is a few MB/s whatever the chipset, which is fine for
+  updates; hardware revisions change chipsets, so check `lsusb` before
+  trusting a model name.
+- Recommendation for this cabinet: a 5 GHz-capable RTL8822BU/8812BU or
+  RTL8811AU stick (ASUS USB-AC53 Nano A1, Edimax EW-7822ULC, Archer T3U or
+  T2U nano) on the MiSTer's hub, joined to the 5 GHz SSID, Bluetooth on a
+  separate dongle if ever needed. Verification: `lsusb` and `dmesg | grep
+  -iE "rtw|usbcore"` on the MiSTer after plugging it in (ask before using
+  10.0.1.80).
+
+Sources: MiSTer docs "WiFi" (mister-devel.github.io/MkDocs_MiSTer/basics/
+wifi/), MiSTer Bible "WiFi setup" (boogermann.github.io/Bible_MiSTer/
+getting-started/network/wifi-setup/), forum thread "Recommended WiFi
+Dongles" (misterfpga.org/viewtopic.php?t=407), MiSTer kernel
+`arch/arm/configs/MiSTer_defconfig` on branch MiSTer-v6.18 (read
+2026-10-28), Espressif ESP-NOW documentation (ESP-IDF API guide).
+
 ## 4. Changes to the link protocol and `rd_cabinet_io.sv`
 
 Today's protocol (docs/cabinet-io.md) already carries every input the game
@@ -638,9 +769,13 @@ minutes).
    the shifter PCB (the coil's PWM duty and whether the player feels it),
    settled on the bench in build step 5 by watching the coil current while
    the breadboard replays data 0xB9 with a SEL3 pulse.
-9. **Link latency tolerance** (PLAN.md 3.2): decides whether serial A stays
-   in frames, goes over Wi-Fi, or takes USER_IO[5]/[6] raw. Settled by the
-   two-instance MAME link with an inserted delay.
+9. **Link latency tolerance** (PLAN.md 3.2): decides whether serial A can
+   go over the air at all and sets the de-jitter depth of 3.12. Settled by
+   the two-instance MAME link with an inserted delay, swept from 1 to 20
+   ms with 1 ms of jitter and 0.1 % byte loss, noting where LINKED GAME
+   degrades and where it drops; then confirmed on two ESP32 dev modules
+   over ESP-NOW with a counter loopback (round trip measured on a scope
+   from TX edge to re-serialised RX edge).
 10. **I/O board revision and user-port pin map in the cabinet's MiSTer:**
     continuity from the USB 3.0 socket to the GPIO_1 header against the
     I/O board schematic; whether the IO6 jumper exists. Settled with a
@@ -702,6 +837,6 @@ minutes).
 8. **KiCad rev A:** everything in section 3, five boards (four cockpits and
    the compact) plus two spares. Bring-up on the bench, then one cockpit,
    then the compact. Rev B carries the fixes.
-9. **Later (PLAN.md M8):** Wi-Fi pod stream (serial B as UDP), Wi-Fi link
-   bridge if item 9 allows it, the fallback H-bridge for a cabinet with a
-   dead amp.
+9. **Later (PLAN.md M8):** the ESP-NOW link of 3.12 between two boards,
+   then the real-hardware bridge board, then LAN UDP; the pod stream rides
+   the same frames; the fallback H-bridge for a cabinet with a dead amp.
