@@ -20,11 +20,12 @@ for row in result.stdout.splitlines():
 for row in (ROOT / "releases/SHA256SUMS").read_text().splitlines():
     digest, name = row.split("  ", 1)
     assert hashlib.sha256((ROOT / "releases" / name).read_bytes()).hexdigest() == digest, name
-mra = ET.parse(ROOT / "releases/Hard Drivin' (Cockpit, rev 7).mra").getroot()
-assert (ROOT / "releases" / (mra.findtext("rbf") + ".rbf")).is_file()
-assert mra.find("nvram").attrib == {"index": "2", "size": "4096"}
+mra = ET.parse(ROOT / "releases/Race Drivin' (Cockpit, rev 5).mra").getroot()
+rbfs = sorted((ROOT / "releases").glob(mra.findtext("rbf") + "_*.rbf"))
+assert rbfs, "No released cockpit RBF (releases/RaceDrivin_cockpit_YYYYMMDD.rbf)"
+assert mra.find("nvram").attrib == {"index": "2", "size": "8192"}
 private = re.compile(r"/(?:Users|home)/[A-Za-z0-9]|192[.]168[.]\d+[.]\d+|BEGIN (?:RSA |OPENSSH |EC )?PRIVATE KEY")
-excluded = {".git", "build", "generated", "output_files", "db", "incremental_db", "__pycache__"}
+excluded = {".git", ".claude", "build", "generated", "output_files", "db", "incremental_db", "__pycache__", "make.local"}
 for path in ROOT.rglob("*"):
     if any(part in excluded for part in path.relative_to(ROOT).parts) or not path.is_file():
         continue
